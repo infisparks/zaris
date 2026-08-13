@@ -1,0 +1,24 @@
+{
+  "name": "zari-whatsapp-catalogue-server",
+  "version": "1.0.0",
+  "description": "Node.js Express server for Evolution API WhatsApp automation - Auto reply catalogue URL on catalogue keyword",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "keywords": [
+    "evolution-api",
+    "whatsapp",
+    "bot",
+    "catalogue",
+    "express"
+  ],
+  "author": "InfiSpark",
+  "license": "ISC",
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2"
+  }
+}

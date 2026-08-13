@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Zari WhatsApp Automation - Catalogue Auto Reply</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div class="app-layout">
+    <!-- Top Navigation Header -->
+    <header class="app-header">
+      <div class="header-container">
+        <div class="brand-block">
+          <div class="brand-avatar">Z</div>
+          <div>
+            <h1 class="brand-title">Zari WhatsApp Automation</h1>
+            <p class="brand-subtitle">Evolution API • Instance: <strong id="header-instance-name">zari</strong></p>
+          </div>
+        </div>
+        <div class="header-actions">
+          <div class="status-badge" id="connection-status-badge">
+            <span class="status-dot"></span>
+            <span id="connection-status-text">Checking Status...</span>
+          </div>
+          <button class="btn btn-secondary btn-sm" id="btn-refresh" onclick="fetchStatusAndLogs()">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+            Refresh
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <!-- Main Container -->
+    <main class="main-content">
+      <!-- Metric Cards Grid -->
+      <section class="metrics-grid">
+        <div class="metric-card">
+          <div class="metric-icon-wrap bg-purple-light">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#4F46E5" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+          </div>
+          <div>
+            <span class="metric-label">Messages Received</span>
+            <h3 class="metric-value" id="stat-received">0</h3>
+          </div>
+        </div>
+
+        <div class="metric-card">
+          <div class="metric-icon-wrap bg-emerald-light">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#059669" stroke-width="2"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"></path><line x1="3" y1="6" x2="21" y2="6"></line><path d="M16 10a4 4 0 0 1-8 0"></path></svg>
+          </div>
+          <div>
+            <span class="metric-label">Catalogue Triggers</span>
+            <h3 class="metric-value" id="stat-triggers">0</h3>
+          </div>
+        </div>
+
+        <div class="metric-card">
+          <div class="metric-icon-wrap bg-blue-light">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2563EB" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+          </div>
+          <div>
+            <span class="metric-label">Replies Sent</span>
+            <h3 class="metric-value" id="stat-sent">0</h3>
+          </div>
+        </div>
+
+        <div class="metric-card">
+          <div class="metric-icon-wrap bg-amber-light">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#D97706" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+          </div>
+          <div>
+            <span class="metric-label">Server Uptime</span>
+            <h3 class="metric-value" id="stat-uptime">0s</h3>
+          </div>
+        </div>
+      </section>
+
+      <!-- Grid of 2 Cards: Auto-Reply Rule & Webhook Setup -->
+      <section class="two-col-grid">
+        <!-- Card 1: Active Catalogue Rule -->
+        <div class="card">
+          <div class="card-header">
+            <h2 class="card-title">Catalogue Auto-Reply Rule</h2>
+            <span class="badge badge-success">Active</span>
+          </div>
+          <div class="card-body">
+            <div class="info-row">
+              <span class="info-label">Trigger Keywords:</span>
+              <div class="tag-group">
+                <span class="tag">catalogue</span>
+                <span class="tag">Catalogue</span>
+                <span class="tag">CATALOGUE</span>
+                <span class="tag">catalog</span>
+                <span class="tag">any case / contains</span>
+              </div>
+            </div>
+
+            <div class="info-row">
+              <span class="info-label">Catalogue URL:</span>
+              <a href="https://wa.me/c/919423185940" target="_blank" class="link-url" id="config-catalogue-url">
+                https://wa.me/c/919423185940
+              </a>
+            </div>
+
+            <div class="info-row">
+              <span class="info-label">Auto Mark as Read:</span>
+              <span class="badge badge-indigo">Enabled (POST /chat/markMessageAsRead)</span>
+            </div>
+
+            <div class="info-row">
+              <span class="info-label">Standard Reply Message:</span>
+              <pre class="code-preview" id="reply-preview">Hello! Thank you for reaching out to us. 🌸
+
+Here is our official product Catalogue:
+👉 https://wa.me/c/919423185940
+
+Please browse through our collection. Feel free to message us here if you have any questions or would like to place an order! 😊</pre>
+            </div>
+          </div>
+        </div>
+
+        <!-- Card 2: Webhook Configuration & Simulator -->
+        <div class="card">
+          <div class="card-header">
+            <h2 class="card-title">Webhook Configuration & Simulator</h2>
+          </div>
+          <div class="card-body">
+            <div class="form-group">
+              <label class="form-label" for="webhook-url-input">Instance Webhook Endpoint URL</label>
+              <div class="input-with-button">
+                <input type="text" id="webhook-url-input" class="form-input" placeholder="https://your-public-url.com/webhook" />
+                <button class="btn btn-primary" id="btn-save-webhook" onclick="configureWebhook()">Save & Sync</button>
+              </div>
+              <p class="form-helper">Enter your public domain or ngrok URL to receive real-time messages from Evolution API.</p>
+            </div>
+
+            <hr class="divider" />
+
+            <h3 class="section-title">Test Auto-Reply Simulator</h3>
+            <div class="form-group">
+              <label class="form-label" for="test-input-text">Test Incoming Message</label>
+              <div class="input-with-button">
+                <input type="text" id="test-input-text" class="form-input" value="Please share your catalogue" placeholder="Type test message..." />
+                <button class="btn btn-secondary" onclick="runKeywordTest()">Simulate Test</button>
+              </div>
+            </div>
+            <div id="test-result-box" class="test-result-box hidden"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Card: Direct WhatsApp Sender Form -->
+      <section class="card">
+        <div class="card-header">
+          <h2 class="card-title">Send Direct WhatsApp Message / Notification</h2>
+        </div>
+        <div class="card-body">
+          <form id="direct-send-form" onsubmit="handleDirectSend(event)">
+            <div class="form-grid-2">
+              <div class="form-group">
+                <label class="form-label" for="send-number">Recipient WhatsApp Number <span class="required">*</span></label>
+                <input type="text" id="send-number" class="form-input" placeholder="919423185940 (with country code)" required />
+              </div>
+              <div class="form-group">
+                <label class="form-label" for="send-type">Message Type</label>
+                <select id="send-type" class="form-input" onchange="onMessageTypeChange()">
+                  <option value="custom">Custom Text Message</option>
+                  <option value="catalogue">Send Catalogue Link</option>
+                  <option value="payment">Send Payment Receipt</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- Payment details subform (optional) -->
+            <div id="payment-fields" class="form-grid-3 hidden">
+              <div class="form-group">
+                <label class="form-label" for="pay-name">Customer / Patient Name</label>
+                <input type="text" id="pay-name" class="form-input" placeholder="e.g. John Doe" />
+              </div>
+              <div class="form-group">
+                <label class="form-label" for="pay-amount">Amount (Rs)</label>
+                <input type="number" id="pay-amount" class="form-input" placeholder="e.g. 5000" />
+              </div>
+              <div class="form-group">
+                <label class="form-label" for="pay-type">Amount Type</label>
+                <select id="pay-type" class="form-input">
+                  <option value="deposit">Deposit</option>
+                  <option value="advance">Advance</option>
+                  <option value="settlement">Settlement</option>
+                  <option value="refund">Refund</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="form-group" id="message-text-group">
+              <label class="form-label" for="send-text">Message Content <span class="required">*</span></label>
+              <textarea id="send-text" class="form-textarea" rows="3" placeholder="Type your WhatsApp message here..."></textarea>
+            </div>
+
+            <div class="form-actions">
+              <button type="submit" class="btn btn-primary" id="btn-send-message">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+                Send via WhatsApp
+              </button>
+              <span id="send-status-msg" class="send-status-msg"></span>
+            </div>
+          </form>
+        </div>
+      </section>
+
+      <!-- Activity Logs Table -->
+      <section class="card">
+        <div class="card-header">
+          <div>
+            <h2 class="card-title">Live Message & Auto-Reply Activity</h2>
+            <p class="card-subtitle">Real-time feed of incoming WhatsApp messages and Catalogue auto-replies</p>
+          </div>
+          <button class="btn btn-secondary btn-sm" onclick="fetchStatusAndLogs()">
+            Refresh Table
+          </button>
+        </div>
+        <div class="table-responsive">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Sender</th>
+                <th>Incoming Message</th>
+                <th>Matched Trigger</th>
+                <th>Auto-Reply Status</th>
+                <th>Timestamp</th>
+              </tr>
+            </thead>
+            <tbody id="logs-table-body">
+              <tr>
+                <td colspan="5" class="table-empty">No recent messages yet. Waiting for incoming WhatsApp messages...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="app-footer">
+      <p>Zari WhatsApp Automation Server • Built with Node.js & Evolution API v2.3</p>
+    </footer>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>
