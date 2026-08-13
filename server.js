@@ -266,6 +266,18 @@ function parseIncomingMessage(body) {
     text = msgData.text;
   } else if (msgData.body) {
     text = msgData.body;
+  } else if (msgData.conversation) {
+    text = msgData.conversation;
+  } else if (msgData.caption) {
+    text = msgData.caption;
+  } else if (msgData.content) {
+    text = msgData.content;
+  } else if (payload.conversation) {
+    text = payload.conversation;
+  } else if (payload.caption) {
+    text = payload.caption;
+  } else if (payload.text) {
+    text = payload.text;
   }
 
   const isGroup = remoteJid.includes('@g.us');
