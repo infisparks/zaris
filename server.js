@@ -161,7 +161,7 @@ function parseIncomingMessage(body) {
   if (!body) return null;
 
   // Support both single message and event wrappers (messages.upsert)
-  const event = body.event || body.type;
+  const event = body.event || body.type || 'MESSAGES_UPSERT';
   const instance = body.instance || INSTANCE_NAME;
 
   // Extract raw message item
@@ -173,14 +173,42 @@ function parseIncomingMessage(body) {
   }
 
   const key = msgData.key || body.key || {};
-  const messageObj = msgData.message || body.message || {};
+  let messageObj = msgData.message || body.message || {};
 
-  const remoteJid = key.remoteJid || msgData.remoteJid || body.remoteJid || '';
+  // Recursively unwrap nested message containers (ephemeral, viewOnce, document, edited)
+  let unwrapCount = 0;
+  while (messageObj && typeof messageObj === 'object' && unwrapCount < 5) {
+    unwrapCount++;
+    if (messageObj.ephemeralMessage?.message) {
+      messageObj = messageObj.ephemeralMessage.message;
+    } else if (messageObj.viewOnceMessage?.message) {
+      messageObj = messageObj.viewOnceMessage.message;
+    } else if (messageObj.viewOnceMessageV2?.message) {
+      messageObj = messageObj.viewOnceMessageV2.message;
+    } else if (messageObj.viewOnceMessageV2Extension?.message) {
+      messageObj = messageObj.viewOnceMessageV2Extension.message;
+    } else if (messageObj.documentWithCaptionMessage?.message) {
+      messageObj = messageObj.documentWithCaptionMessage.message;
+    } else if (messageObj.editedMessage?.message?.protocolMessage?.editedMessage) {
+      messageObj = messageObj.editedMessage.message.protocolMessage.editedMessage;
+    } else {
+      break;
+    }
+  }
+
+  const rawRemoteJid = key.remoteJid || msgData.remoteJid || body.remoteJid || '';
+  const altRemoteJid = key.remoteJidAlt || key.participant || msgData.participant || '';
+  // Prefer phone number over LID if remoteJid is @lid
+  let remoteJid = rawRemoteJid;
+  if (remoteJid.includes('@lid') && altRemoteJid.includes('@s.whatsapp.net')) {
+    remoteJid = altRemoteJid;
+  }
+
   const fromMe = Boolean(key.fromMe || msgData.fromMe || body.fromMe);
   const messageId = key.id || msgData.id || body.id || '';
   const pushName = msgData.pushName || body.pushName || '';
 
-  // Extract text content from Baileys message types
+  // Extract text content from Baileys & WhatsApp message types
   let text = '';
   if (typeof messageObj === 'string') {
     text = messageObj;
@@ -204,6 +232,23 @@ function parseIncomingMessage(body) {
     text = messageObj.listResponseMessage.singleSelectReply.selectedRowId;
   } else if (messageObj.templateButtonReplyMessage?.selectedDisplayText) {
     text = messageObj.templateButtonReplyMessage.selectedDisplayText;
+  } else if (messageObj.interactiveResponseMessage?.body?.text) {
+    text = messageObj.interactiveResponseMessage.body.text;
+  } else if (messageObj.interactiveResponseMessage?.nativeFlowResponseMessage?.paramsJson) {
+    try {
+      const params = JSON.parse(messageObj.interactiveResponseMessage.nativeFlowResponseMessage.paramsJson);
+      text = params.id || params.title || params.text || '';
+    } catch (e) {
+      text = messageObj.interactiveResponseMessage.nativeFlowResponseMessage.paramsJson;
+    }
+  } else if (messageObj.interactiveMessage?.body?.text) {
+    text = messageObj.interactiveMessage.body.text;
+  } else if (messageObj.viewCatalogMessage) {
+    text = messageObj.viewCatalogMessage.caption || 'catalogue';
+  } else if (messageObj.productMessage) {
+    text = messageObj.productMessage.product?.title || messageObj.productMessage.product?.description || 'catalogue';
+  } else if (messageObj.orderMessage) {
+    text = messageObj.orderMessage.message || 'catalogue';
   } else if (msgData.messageText) {
     text = msgData.messageText;
   } else if (msgData.text) {
@@ -227,12 +272,12 @@ function parseIncomingMessage(body) {
   };
 }
 
-// Helper: Check if message contains "catalogue" or "catalog" (case-insensitive)
+// Helper: Check if message contains "catalogue" or "catalog" (case-insensitive & fuzzy variations)
 function containsCatalogueKeyword(text) {
   if (!text || typeof text !== 'string') return false;
-  // Match "catalogue", "catalog", "catalouge", "cataloge" in upper, lower or mixed case
-  const catalogueRegex = /\b(catalogue|catalog|catalouges?|catalogues?)\b/i;
-  return catalogueRegex.test(text) || text.toLowerCase().includes('catalogue') || text.toLowerCase().includes('catalog');
+  const normalized = text.toLowerCase().trim();
+  const catalogueRegex = /(catalogue|catalog|catlog|catalouge|cataloge|katalog|cataloog|pricelist|price\s*list)/i;
+  return catalogueRegex.test(normalized) || normalized.includes('catalog') || normalized.includes('catalogue') || normalized.includes('catlog');
 }
 
 // ==========================================
@@ -249,23 +294,33 @@ app.post(['/webhook', '/api/webhook'], async (req, res) => {
       return;
     }
 
-    serverStats.totalMessagesReceived++;
+    const eventName = String(parsed.event || '').toUpperCase();
+    
+    // Process ONLY new incoming messages (MESSAGES_UPSERT or messages.upsert or empty event)
+    // Ignore MESSAGES_UPDATE (status updates like read/delivered) and SEND_MESSAGE (outgoing)
+    const isUpsert = !eventName || eventName.includes('UPSERT') || eventName === 'MESSAGES.UPSERT' || eventName === 'MESSAGES_UPSERT';
+
+    if (!isUpsert) {
+      return;
+    }
 
     // Ignore messages sent by ourselves to avoid infinite loops
     if (parsed.fromMe) {
       return;
     }
 
+    serverStats.totalMessagesReceived++;
+
     const { remoteJid, senderNumber, messageId, pushName, text, isGroup } = parsed;
 
-    // Deduplication check
-    const dedupeKey = `${remoteJid}_${messageId || text}_${Math.floor(Date.now() / 5000)}`;
+    // Deduplication check: ONLY on new incoming upsert messages
+    const dedupeKey = `${remoteJid}_${messageId || text}`;
     if (isRecentlyProcessed(dedupeKey)) {
-      console.log(`[Webhook] Duplicate message skipped for ${senderNumber}`);
+      console.log(`[Webhook Skip] Duplicate message skipped for ${senderNumber} (ID: ${messageId})`);
       return;
     }
 
-    console.log(`\n📩 [Incoming Message] From: ${pushName || 'User'} (${senderNumber}) | Text: "${text}" | ID: ${messageId}`);
+    console.log(`\n📩 [Incoming Message] Event: ${parsed.event} | From: ${pushName || 'User'} (${senderNumber}) | Text: "${text}" | ID: ${messageId}`);
 
     // Automatically mark the message as read
     if (messageId && remoteJid) {
@@ -321,6 +376,7 @@ app.post(['/webhook', '/api/webhook'], async (req, res) => {
         messageId: messageId,
         isGroup: isGroup,
       });
+      console.log(`ℹ️ [Message Logged] Message from ${senderNumber} did not trigger catalogue.`);
     }
   } catch (error) {
     console.error('[Webhook Processing Error]:', error);
