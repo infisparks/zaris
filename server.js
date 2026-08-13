@@ -509,7 +509,7 @@ app.get('/', (req, res) => {
 });
 
 // Start Server
-app.listen(PORT, async () => {
+app.listen(PORT, '0.0.0.0', async () => {
   console.log(`\n======================================================`);
   console.log(`🌸 Zari WhatsApp Catalogue Auto-Reply Server`);
   console.log(`======================================================`);

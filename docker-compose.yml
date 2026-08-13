@@ -6,9 +6,9 @@ services:
     container_name: zari-whatsapp-server
     restart: always
     ports:
-      - "${PORT:-3001}:3001"
+      - "${PORT:-3000}:3000"
     environment:
-      - PORT=3001
+      - PORT=3000
       - EVOLUTION_API_URL=${EVOLUTION_API_URL:-https://evo.infispark.in}
       - EVOLUTION_API_KEY=${EVOLUTION_API_KEY:-vR39h6avY69g7kAU3YQbS6V6XEvudson}
       - WHATSAPP_API_KEY=${WHATSAPP_API_KEY:-vR39h6avY69g7kAU3YQbS6V6XEvudson}

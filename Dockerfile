@@ -11,16 +11,16 @@ RUN npm install --omit=dev
 # Copy application files
 COPY . .
 
-# Expose server port
-EXPOSE 3001
+# Expose standard port 3000 (Coolify / Docker default)
+EXPOSE 3000
 
-# Healthcheck
-HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
-  CMD wget --no-verbose --tries=1 --spider http://localhost:3001/api/status || exit 1
+# Robust Node-based healthcheck (works across IPv4/IPv6, handles dynamic PORT, no wget/curl dependency)
+HEALTHCHECK --interval=20s --timeout=5s --start-period=5s --retries=3 \
+  CMD node -e "const http = require('http'); const port = process.env.PORT || 3000; http.get('http://127.0.0.1:' + port + '/api/status', (res) => process.exit(res.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1));"
 
 # Environment Defaults
 ENV NODE_ENV=production \
-    PORT=3001
+    PORT=3000
 
 # Start application
 CMD ["npm", "start"]
