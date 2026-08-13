@@ -136,7 +136,9 @@ async function sendWhatsAppMessage(number, text, options = {}) {
     linkPreview: options.linkPreview !== undefined ? options.linkPreview : true,
   };
 
-  console.log(`[Send Message] Sending to ${cleanNumber} via ${url}...`);
+  console.log(`\n📤 [OUTGOING REQUEST] Sending WhatsApp message to: ${cleanNumber}`);
+  console.log(`   URL: ${url}`);
+  console.log(`   Text Preview: "${text.substring(0, 60).replace(/\n/g, ' ')}..."`);
 
   const response = await fetch(url, {
     method: 'POST',
@@ -148,10 +150,13 @@ async function sendWhatsAppMessage(number, text, options = {}) {
 
   if (!response.ok) {
     const errMsg = data?.response?.message || data?.message || `HTTP ${response.status}`;
+    const errFormatted = typeof errMsg === 'object' ? JSON.stringify(errMsg) : errMsg;
+    console.error(`❌ [OUTGOING ERROR] HTTP ${response.status} - ${errFormatted}`);
     serverStats.repliesFailed++;
-    throw new Error(typeof errMsg === 'object' ? JSON.stringify(errMsg) : errMsg);
+    throw new Error(errFormatted);
   }
 
+  console.log(`✅ [OUTGOING SUCCESS] Message sent to ${cleanNumber}! Response Message ID: ${data?.key?.id || data?.id || 'OK'}`);
   serverStats.repliesSent++;
   return data;
 }
@@ -160,20 +165,25 @@ async function sendWhatsAppMessage(number, text, options = {}) {
 function parseIncomingMessage(body) {
   if (!body) return null;
 
+  let payload = body;
+  if (Array.isArray(payload)) {
+    payload = payload[0] || {};
+  }
+
   // Support both single message and event wrappers (messages.upsert)
-  const event = body.event || body.type || 'MESSAGES_UPSERT';
-  const instance = body.instance || INSTANCE_NAME;
+  const event = payload.event || payload.type || 'MESSAGES_UPSERT';
+  const instance = payload.instance || INSTANCE_NAME;
 
   // Extract raw message item
-  let msgData = body.data || body;
+  let msgData = payload.data || payload;
   if (Array.isArray(msgData)) {
     msgData = msgData[0] || {};
   } else if (msgData.messages && Array.isArray(msgData.messages)) {
     msgData = msgData.messages[0] || {};
   }
 
-  const key = msgData.key || body.key || {};
-  let messageObj = msgData.message || body.message || {};
+  const key = msgData.key || payload.key || msgData.data?.key || {};
+  let messageObj = msgData.message || payload.message || msgData.data?.message || {};
 
   // Recursively unwrap nested message containers (ephemeral, viewOnce, document, edited)
   let unwrapCount = 0;
@@ -196,17 +206,18 @@ function parseIncomingMessage(body) {
     }
   }
 
-  const rawRemoteJid = key.remoteJid || msgData.remoteJid || body.remoteJid || '';
-  const altRemoteJid = key.remoteJidAlt || key.participant || msgData.participant || '';
+  const rawRemoteJid = key.remoteJid || msgData.remoteJid || msgData.jid || msgData.from || payload.remoteJid || payload.from || '';
+  const altRemoteJid = key.remoteJidAlt || key.participant || msgData.participant || msgData.author || '';
+  
   // Prefer phone number over LID if remoteJid is @lid
   let remoteJid = rawRemoteJid;
   if (remoteJid.includes('@lid') && altRemoteJid.includes('@s.whatsapp.net')) {
     remoteJid = altRemoteJid;
   }
 
-  const fromMe = Boolean(key.fromMe || msgData.fromMe || body.fromMe);
-  const messageId = key.id || msgData.id || body.id || '';
-  const pushName = msgData.pushName || body.pushName || '';
+  const fromMe = Boolean(key.fromMe || msgData.fromMe || payload.fromMe);
+  const messageId = key.id || msgData.id || payload.id || '';
+  const pushName = msgData.pushName || payload.pushName || msgData.notifyName || '';
 
   // Extract text content from Baileys & WhatsApp message types
   let text = '';
@@ -253,6 +264,8 @@ function parseIncomingMessage(body) {
     text = msgData.messageText;
   } else if (msgData.text) {
     text = msgData.text;
+  } else if (msgData.body) {
+    text = msgData.body;
   }
 
   const isGroup = remoteJid.includes('@g.us');
@@ -287,25 +300,50 @@ app.post(['/webhook', '/api/webhook'], async (req, res) => {
   // Acknowledge webhook immediately to prevent timeouts
   res.status(200).json({ received: true });
 
+  const timestamp = new Date().toLocaleTimeString();
+  console.log(`\n======================================================`);
+  console.log(`📥 [WEBHOOK RECEIVED] ${timestamp}`);
+  console.log(`------------------------------------------------------`);
+  console.log(`RAW PAYLOAD RECEIVED IN TERMINAL:`);
+  try {
+    console.log(JSON.stringify(req.body, null, 2));
+  } catch (err) {
+    console.log(req.body);
+  }
+  console.log(`------------------------------------------------------`);
+
   try {
     const parsed = parseIncomingMessage(req.body);
 
-    if (!parsed || !parsed.remoteJid) {
+    if (!parsed || (!parsed.remoteJid && !parsed.senderNumber)) {
+      console.log(`⚠️ [WEBHOOK NOTICE] Received request but could not extract phone number / remoteJid.`);
+      console.log(`======================================================\n`);
       return;
     }
+
+    console.log(`📋 [PARSED MESSAGE DETAILS]:`);
+    console.log(`   Event:      "${parsed.event}"`);
+    console.log(`   Instance:   "${parsed.instance}"`);
+    console.log(`   From User:  "${parsed.pushName || 'Unknown'}" (${parsed.senderNumber})`);
+    console.log(`   RemoteJid:  "${parsed.remoteJid}"`);
+    console.log(`   Text Content: "${parsed.text}"`);
+    console.log(`   Message ID: "${parsed.messageId}" | fromMe: ${parsed.fromMe}`);
 
     const eventName = String(parsed.event || '').toUpperCase();
     
     // Process ONLY new incoming messages (MESSAGES_UPSERT or messages.upsert or empty event)
-    // Ignore MESSAGES_UPDATE (status updates like read/delivered) and SEND_MESSAGE (outgoing)
     const isUpsert = !eventName || eventName.includes('UPSERT') || eventName === 'MESSAGES.UPSERT' || eventName === 'MESSAGES_UPSERT';
 
     if (!isUpsert) {
+      console.log(`ℹ️ [WEBHOOK SKIPPED] Event "${parsed.event}" is not an incoming message event (UPSERT).`);
+      console.log(`======================================================\n`);
       return;
     }
 
     // Ignore messages sent by ourselves to avoid infinite loops
     if (parsed.fromMe) {
+      console.log(`ℹ️ [WEBHOOK SKIPPED] Message was sent by bot itself (fromMe = true).`);
+      console.log(`======================================================\n`);
       return;
     }
 
@@ -316,16 +354,17 @@ app.post(['/webhook', '/api/webhook'], async (req, res) => {
     // Deduplication check: ONLY on new incoming upsert messages
     const dedupeKey = `${remoteJid}_${messageId || text}`;
     if (isRecentlyProcessed(dedupeKey)) {
-      console.log(`[Webhook Skip] Duplicate message skipped for ${senderNumber} (ID: ${messageId})`);
+      console.log(`⚠️ [WEBHOOK SKIPPED] Duplicate message ignored for ${senderNumber} (ID: ${messageId})`);
+      console.log(`======================================================\n`);
       return;
     }
 
-    console.log(`\n📩 [Incoming Message] Event: ${parsed.event} | From: ${pushName || 'User'} (${senderNumber}) | Text: "${text}" | ID: ${messageId}`);
+    console.log(`\n📩 [MESSAGE ACCEPTED] From: ${pushName || 'User'} (${senderNumber}) | Text: "${text}"`);
 
     // Automatically mark the message as read
     if (messageId && remoteJid) {
       markMessageAsRead(remoteJid, messageId, false).catch((err) =>
-        console.error('[Auto-Read Error]:', err.message)
+        console.error('❌ [Auto-Read Error]:', err.message)
       );
     }
 
@@ -334,7 +373,7 @@ app.post(['/webhook', '/api/webhook'], async (req, res) => {
 
     if (isCatalogueRequest) {
       serverStats.catalogueTriggers++;
-      console.log(`🎯 [Catalogue Trigger] Keyword matched in: "${text}" from ${senderNumber}`);
+      console.log(`🎯 [CATALOGUE KEYWORD MATCHED!] Keyword found in: "${text}" from ${senderNumber}`);
 
       try {
         const replyText = DEFAULT_CATALOGUE_MESSAGE;
@@ -351,9 +390,9 @@ app.post(['/webhook', '/api/webhook'], async (req, res) => {
           isGroup: isGroup,
         });
 
-        console.log(`✅ [Catalogue Sent] Successfully replied to ${senderNumber} with Catalogue link!`);
+        console.log(`✅ [AUTO-REPLY SUCCESS] Successfully sent Catalogue to ${senderNumber}!`);
       } catch (sendErr) {
-        console.error(`❌ [Auto-Reply Error] Failed to send catalogue to ${senderNumber}:`, sendErr.message);
+        console.error(`❌ [AUTO-REPLY FAILED] Error sending catalogue to ${senderNumber}:`, sendErr.message);
 
         addActivityLog({
           type: 'CATALOGUE_AUTO_REPLY',
@@ -376,10 +415,13 @@ app.post(['/webhook', '/api/webhook'], async (req, res) => {
         messageId: messageId,
         isGroup: isGroup,
       });
-      console.log(`ℹ️ [Message Logged] Message from ${senderNumber} did not trigger catalogue.`);
+      console.log(`ℹ️ [MESSAGE LOGGED ONLY] Text "${text}" from ${senderNumber} did not match catalogue keywords.`);
     }
+
+    console.log(`======================================================\n`);
   } catch (error) {
-    console.error('[Webhook Processing Error]:', error);
+    console.error('❌ [WEBHOOK PROCESSING ERROR]:', error);
+    console.log(`======================================================\n`);
   }
 });
 
