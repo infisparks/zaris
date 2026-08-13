@@ -16,5 +16,6 @@ services:
       - CATALOGUE_URL=${CATALOGUE_URL:-https://wa.me/c/919423185940}
       - AUTO_READ_MESSAGES=${AUTO_READ_MESSAGES:-true}
       - REPLY_DELAY_MS=${REPLY_DELAY_MS:-1000}
+      - WEBHOOK_PUBLIC_URL=${WEBHOOK_PUBLIC_URL}
     env_file:
       - .env

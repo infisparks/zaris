@@ -13,6 +13,7 @@ const INSTANCE_NAME = process.env.INSTANCE_NAME || 'zari';
 const CATALOGUE_URL = process.env.CATALOGUE_URL || 'https://wa.me/c/919423185940';
 const AUTO_READ_MESSAGES = process.env.AUTO_READ_MESSAGES !== 'false';
 const REPLY_DELAY_MS = parseInt(process.env.REPLY_DELAY_MS || '1000', 10);
+const WEBHOOK_PUBLIC_URL = process.env.WEBHOOK_PUBLIC_URL || process.env.WEBHOOK_URL || process.env.PUBLIC_URL || process.env.APP_URL || process.env.COOLIFY_URL || '';
 
 // Default Reply Message
 const DEFAULT_CATALOGUE_MESSAGE = `Hello! Thank you for reaching out to us. 🌸
@@ -623,15 +624,49 @@ app.listen(PORT, '0.0.0.0', async () => {
   console.log(`\n======================================================`);
   console.log(`🌸 Zari WhatsApp Catalogue Auto-Reply Server`);
   console.log(`======================================================`);
-  console.log(`🚀 Server Running on: http://localhost:${PORT}`);
+  console.log(`🚀 Server Running on: http://0.0.0.0:${PORT}`);
   console.log(`📡 Evolution API URL: ${EVOLUTION_API_URL}`);
   console.log(`📱 Instance Name:    ${INSTANCE_NAME}`);
   console.log(`🔑 API Key Config:   ${API_KEY ? 'Configured ✅' : 'Missing ❌'}`);
   console.log(`🛍️  Catalogue URL:    ${CATALOGUE_URL}`);
   console.log(`👀 Auto Mark Read:   ${AUTO_READ_MESSAGES ? 'Enabled ✅' : 'Disabled'}`);
-  console.log(`🔗 Webhook Endpoint: http://localhost:${PORT}/webhook`);
-  console.log(`🖥️  Admin Dashboard:  http://localhost:${PORT}/`);
+  console.log(`🔗 Webhook Public:   ${WEBHOOK_PUBLIC_URL || 'Not configured in env (use WEBHOOK_PUBLIC_URL)'}`);
+  console.log(`🖥️  Admin Dashboard:  http://0.0.0.0:${PORT}/`);
   console.log(`======================================================\n`);
+
+  // Auto-sync Webhook URL with Evolution API on startup if WEBHOOK_PUBLIC_URL is configured
+  if (WEBHOOK_PUBLIC_URL) {
+    let targetWebhookUrl = WEBHOOK_PUBLIC_URL.trim();
+    if (!targetWebhookUrl.endsWith('/webhook') && !targetWebhookUrl.endsWith('/api/webhook')) {
+      targetWebhookUrl = `${targetWebhookUrl.replace(/\/+$/, '')}/webhook`;
+    }
+    console.log(`📡 Auto-configuring Webhook in Evolution API to: ${targetWebhookUrl}...`);
+    try {
+      const setRes = await fetch(`${EVOLUTION_API_URL}/webhook/set/${INSTANCE_NAME}`, {
+        method: 'POST',
+        headers: getApiHeaders(),
+        body: JSON.stringify({
+          webhook: {
+            enabled: true,
+            url: targetWebhookUrl,
+            byEvents: false,
+            base64: false,
+            events: ['MESSAGES_UPSERT', 'MESSAGES_UPDATE', 'SEND_MESSAGE'],
+          },
+        }),
+      });
+      const setData = await setRes.json().catch(() => ({}));
+      if (setRes.ok) {
+        console.log(`✅ Webhook URL successfully registered in Evolution API!`);
+      } else {
+        console.warn(`⚠️ Could not auto-register webhook in Evolution API (HTTP ${setRes.status}):`, setData);
+      }
+    } catch (whErr) {
+      console.warn(`⚠️ Error auto-registering webhook in Evolution API: ${whErr.message}`);
+    }
+  } else {
+    console.log(`ℹ️ TIP: Set WEBHOOK_PUBLIC_URL=https://your-domain.com/webhook in Coolify environment variables so Evolution API automatically routes incoming messages to this server.`);
+  }
 
   // Quick verify instance connection on startup
   try {
