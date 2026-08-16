@@ -9,16 +9,6 @@ Here is our official product Catalogue:
 
 Please browse through our collection. Feel free to message us here if you have any questions or would like to place an order! 😊`;
 
-// Format uptime into human-readable string
-function formatUptime(seconds) {
-  if (seconds < 60) return `${seconds}s`;
-  const mins = Math.floor(seconds / 60);
-  const secs = seconds % 60;
-  if (mins < 60) return `${mins}m ${secs}s`;
-  const hours = Math.floor(mins / 60);
-  return `${hours}h ${mins % 60}m`;
-}
-
 // Format ISO timestamp into local readable time
 function formatTimestamp(isoStr) {
   if (!isoStr) return '-';
@@ -71,7 +61,9 @@ async function fetchRules() {
       if (data.defaultCatalogueUrl) defaultCatalogueUrl = data.defaultCatalogueUrl;
       if (data.defaultTemplate) defaultTemplateText = data.defaultTemplate;
       renderRulesTable();
-      document.getElementById('stat-rules-count').innerText = currentRules.filter(r => r.enabled !== false).length;
+      const activeCount = currentRules.filter(r => r.enabled !== false).length;
+      const countEl = document.getElementById('stat-rules-count');
+      if (countEl) countEl.innerText = activeCount;
     }
   } catch (err) {
     console.error('Error fetching rules:', err);
@@ -89,7 +81,7 @@ function renderRulesTable() {
     tbody.innerHTML = `
       <tr>
         <td colspan="6" class="table-empty">
-          No auto-reply rules configured yet. Click <strong>"+ Add New Rule"</strong> to create one.
+          No auto-reply rules configured yet. Click <strong>"+ Add Rule"</strong> to set one up.
         </td>
       </tr>
     `;
@@ -100,11 +92,22 @@ function renderRulesTable() {
     const isEnabled = rule.enabled !== false;
     const instance = rule.instance && rule.instance !== '*' ? rule.instance : 'All Instances (*)';
 
-    // Target Numbers Rendering
-    let numbersDisplay = '';
+    // Instance Badge
+    const instanceBadge = rule.instance && rule.instance !== '*'
+      ? `<span class="badge badge-indigo">⚡ ${escapeHtml(rule.instance)}</span>`
+      : `<span class="badge badge-neutral">🌐 All Instances (*)</span>`;
+
+    // Keywords Display
+    const keywords = Array.isArray(rule.keywords) ? rule.keywords : [];
+    const keywordsDisplay = keywords.length > 0
+      ? `<div class="tag-group">${keywords.map(k => `<span class="tag tag-purple">${escapeHtml(k)}</span>`).join('')}</div>`
+      : `<span class="tag">No keywords</span>`;
+
+    // Target Numbers
     const nums = Array.isArray(rule.phoneNumbers) ? rule.phoneNumbers : [];
+    let numbersDisplay = '';
     if (nums.length === 0 || nums.includes('*')) {
-      numbersDisplay = `<span class="user-all-badge">🌐 All Users (*)</span>`;
+      numbersDisplay = `<span class="user-all-badge">🌐 All Users</span>`;
     } else {
       numbersDisplay = `
         <div class="tag-group">
@@ -113,33 +116,27 @@ function renderRulesTable() {
       `;
     }
 
-    // Keywords Rendering
-    const keywords = Array.isArray(rule.keywords) ? rule.keywords : [];
-    const keywordsDisplay = keywords.length > 0
-      ? `<div class="tag-group">${keywords.map(k => `<span class="tag tag-purple">${escapeHtml(k)}</span>`).join('')}</div>`
-      : `<span class="tag">No keywords</span>`;
+    // Message snippet
+    const messagePreview = escapeHtml(rule.replyMessage || '');
 
     // Status Badge
     const statusBadge = isEnabled
-      ? `<span class="badge badge-success" style="cursor:pointer;" onclick="toggleRuleState('${rule.id}', false)" title="Click to disable">Active</span>`
-      : `<span class="badge badge-neutral" style="cursor:pointer;" onclick="toggleRuleState('${rule.id}', true)" title="Click to enable">Paused</span>`;
-
-    // Message snippet
-    const messagePreview = escapeHtml(rule.replyMessage || '');
+      ? `<span class="badge badge-success" style="cursor:pointer;" onclick="toggleRuleState('${rule.id}', false)" title="Click to pause">Active</span>`
+      : `<span class="badge badge-neutral" style="cursor:pointer;" onclick="toggleRuleState('${rule.id}', true)" title="Click to activate">Paused</span>`;
 
     return `
       <tr>
         <td>
-          <div class="rule-title-cell">
-            <span class="rule-name-text">${escapeHtml(rule.name || 'Untitled Rule')}</span>
-            <span class="rule-instance-tag">Instance: <strong>${escapeHtml(instance)}</strong> • Match: <em>${rule.matchType || 'contains'}</em></span>
+          <div style="display:flex; flex-direction:column; gap:4px;">
+            ${instanceBadge}
+            ${rule.name ? `<span style="font-size:11px; color:#6B7280;">${escapeHtml(rule.name)}</span>` : ''}
           </div>
         </td>
-        <td>${numbersDisplay}</td>
         <td>${keywordsDisplay}</td>
         <td>
           <div class="msg-snippet-box" title="${messagePreview}">${messagePreview}</div>
         </td>
+        <td>${numbersDisplay}</td>
         <td>${statusBadge}</td>
         <td>
           <div class="action-buttons-wrap" style="justify-content: flex-end;">
@@ -163,14 +160,13 @@ function renderRulesTable() {
 // 3. Add / Edit Rule Modal Handling
 // ==========================================
 function openAddRuleModal() {
-  document.getElementById('modal-title').innerText = 'Add Auto-Reply Rule';
+  document.getElementById('modal-title').innerText = 'Configure Instance Auto-Reply';
   document.getElementById('rule-id').value = '';
-  document.getElementById('rule-name').value = '';
-  document.getElementById('rule-phone-numbers').value = '';
   document.getElementById('rule-instance').value = 'zari';
   document.getElementById('rule-keywords').value = '';
-  document.getElementById('rule-match-type').value = 'contains';
   document.getElementById('rule-reply-message').value = defaultTemplateText;
+  document.getElementById('rule-name').value = '';
+  document.getElementById('rule-phone-numbers').value = '';
   document.getElementById('rule-enabled').checked = true;
 
   document.getElementById('rule-modal').classList.remove('hidden');
@@ -180,18 +176,18 @@ function openEditRuleModal(ruleId) {
   const rule = currentRules.find(r => r.id === ruleId);
   if (!rule) return;
 
-  document.getElementById('modal-title').innerText = `Edit Rule: ${rule.name || 'Auto-Reply'}`;
+  document.getElementById('modal-title').innerText = `Edit Instance Rule (${rule.instance || '*'})`;
   document.getElementById('rule-id').value = rule.id;
-  document.getElementById('rule-name').value = rule.name || '';
-  
-  const nums = Array.isArray(rule.phoneNumbers) ? rule.phoneNumbers.join(', ') : (rule.phoneNumbers || '');
-  document.getElementById('rule-phone-numbers').value = nums;
   document.getElementById('rule-instance').value = rule.instance || '*';
   
   const kws = Array.isArray(rule.keywords) ? rule.keywords.join(', ') : (rule.keywords || '');
   document.getElementById('rule-keywords').value = kws;
-  document.getElementById('rule-match-type').value = rule.matchType || 'contains';
+  
   document.getElementById('rule-reply-message').value = rule.replyMessage || '';
+  document.getElementById('rule-name').value = rule.name || '';
+  
+  const nums = Array.isArray(rule.phoneNumbers) ? rule.phoneNumbers.join(', ') : (rule.phoneNumbers || '');
+  document.getElementById('rule-phone-numbers').value = nums;
   document.getElementById('rule-enabled').checked = rule.enabled !== false;
 
   document.getElementById('rule-modal').classList.remove('hidden');
@@ -212,7 +208,7 @@ function insertDefaultCatalogueTemplate() {
   textarea.value = defaultTemplateText;
 }
 
-// Save Rule Form (Create or Update)
+// Save Rule Form
 async function saveRuleForm(e) {
   e.preventDefault();
   const saveBtn = document.getElementById('btn-save-rule');
@@ -222,12 +218,11 @@ async function saveRuleForm(e) {
   const ruleId = document.getElementById('rule-id').value.trim();
   const payload = {
     id: ruleId || undefined,
+    instance: document.getElementById('rule-instance').value.trim() || 'zari',
+    keywords: document.getElementById('rule-keywords').value.trim(),
+    replyMessage: document.getElementById('rule-reply-message').value.trim(),
     name: document.getElementById('rule-name').value.trim(),
     phoneNumbers: document.getElementById('rule-phone-numbers').value.trim(),
-    instance: document.getElementById('rule-instance').value.trim() || '*',
-    keywords: document.getElementById('rule-keywords').value.trim(),
-    matchType: document.getElementById('rule-match-type').value,
-    replyMessage: document.getElementById('rule-reply-message').value.trim(),
     enabled: document.getElementById('rule-enabled').checked,
   };
 
@@ -274,7 +269,7 @@ async function toggleRuleState(ruleId, newEnabledState) {
 // Delete Rule
 async function deleteRule(ruleId) {
   const rule = currentRules.find(r => r.id === ruleId);
-  const ruleName = rule ? `"${rule.name}"` : 'this rule';
+  const ruleName = rule ? `rule for instance "${rule.instance}"` : 'this rule';
 
   if (!confirm(`Are you sure you want to delete ${ruleName}?`)) {
     return;
@@ -298,7 +293,7 @@ async function deleteRule(ruleId) {
 
 // Reset Rules to Default
 async function resetToDefaultRules() {
-  if (!confirm('Are you sure you want to reset all rules to the default Catalogue Auto-Reply rule? Custom rules will be replaced.')) {
+  if (!confirm('Are you sure you want to reset all rules to the default Catalogue auto-reply rule?')) {
     return;
   }
 
@@ -328,13 +323,13 @@ function openTestModalForRule(ruleId) {
   const testInput = document.getElementById('test-input-text');
   const testInstance = document.getElementById('test-instance-name');
 
+  if (rule.instance && rule.instance !== '*') {
+    testInstance.value = rule.instance;
+  }
+
   const nums = Array.isArray(rule.phoneNumbers) ? rule.phoneNumbers : [];
   if (nums.length > 0 && !nums.includes('*')) {
     testSenderInput.value = nums[0];
-  }
-
-  if (rule.instance && rule.instance !== '*') {
-    testInstance.value = rule.instance;
   }
 
   const kws = Array.isArray(rule.keywords) ? rule.keywords : [];
@@ -342,7 +337,6 @@ function openTestModalForRule(ruleId) {
     testInput.value = `Can I get information on ${kws[0]}?`;
   }
 
-  // Scroll to simulator
   testInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
   runRuleSimulation();
 }
@@ -360,7 +354,7 @@ async function runRuleSimulation() {
   if (!message) return;
 
   resultBox.className = 'test-result-box';
-  resultBox.innerHTML = 'Evaluating message against active rules engine...';
+  resultBox.innerHTML = `Evaluating message for instance "<strong>${escapeHtml(instance)}</strong>"...`;
   resultBox.classList.remove('hidden');
 
   try {
@@ -377,26 +371,22 @@ async function runRuleSimulation() {
 
     if (data.matched && data.matchedRule) {
       const rule = data.matchedRule;
-      const targetUsers = Array.isArray(rule.phoneNumbers) && rule.phoneNumbers.length > 0
-        ? `Specific Number(s): ${rule.phoneNumbers.join(', ')}`
-        : 'All Users (*)';
-
       resultBox.className = 'test-result-box match';
       resultBox.innerHTML = `
-        <strong>🎯 Matched Rule:</strong> "${escapeHtml(rule.name)}"<br>
+        <strong>🎯 Matched Instance:</strong> "${escapeHtml(rule.instance || '*')}" (Rule: ${escapeHtml(rule.name)})<br>
         <span style="font-size:12px; color:#065F46;">
-          Target Filter: <strong>${escapeHtml(targetUsers)}</strong> • Instance: <strong>${escapeHtml(rule.instance || '*')}</strong>
+          Matched Keyword: <strong>[${(rule.keywords || []).join(', ')}]</strong>
         </span>
         <div style="margin-top:8px;">
-          <strong>Bot Prepared Response:</strong>
+          <strong>Message Sent Automatically:</strong>
           <pre class="code-preview" style="margin-top:4px;">${escapeHtml(data.preparedReply)}</pre>
         </div>
       `;
     } else {
       resultBox.className = 'test-result-box no-match';
       resultBox.innerHTML = `
-        <strong>ℹ️ No Rule Matched</strong><br>
-        Incoming text <em>"${escapeHtml(message)}"</em> from sender <em>${escapeHtml(sender)}</em> did not trigger any active rules. Normal message flow proceeds without auto-reply.
+        <strong>ℹ️ No Rule Matched for Instance "${escapeHtml(instance)}"</strong><br>
+        Incoming text <em>"${escapeHtml(message)}"</em> did not match any active keywords for instance "${escapeHtml(instance)}". Normal message flow proceeds without auto-reply.
       `;
     }
   } catch (err) {
@@ -426,7 +416,8 @@ function updateStatusUI(data) {
   }
 
   if (data.server?.rulesCount !== undefined) {
-    document.getElementById('stat-rules-count').innerText = data.server.activeRulesCount || 0;
+    const countEl = document.getElementById('stat-rules-count');
+    if (countEl) countEl.innerText = data.server.activeRulesCount || 0;
   }
 }
 
@@ -444,7 +435,7 @@ function updateLogsUI(logs, stats) {
   if (!tbody) return;
 
   if (!logs || logs.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="5" class="table-empty">No recent messages yet. Waiting for incoming WhatsApp messages...</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="6" class="table-empty">No recent messages yet. Waiting for incoming WhatsApp messages...</td></tr>`;
     return;
   }
 
@@ -477,6 +468,9 @@ function updateLogsUI(logs, stats) {
           </div>
         </td>
         <td>
+          <span class="badge badge-neutral">⚡ ${escapeHtml(log.instance || 'zari')}</span>
+        </td>
+        <td>
           <div class="msg-snippet" title="${escapeHtml(log.incomingText || log.replyText || '')}">
             ${escapeHtml(log.incomingText || log.replyText || '-')}
           </div>
@@ -494,20 +488,11 @@ function updateLogsUI(logs, stats) {
 // ==========================================
 function onMessageTypeChange() {
   const type = document.getElementById('send-type').value;
-  const paymentFields = document.getElementById('payment-fields');
-  const messageTextGroup = document.getElementById('message-text-group');
   const sendText = document.getElementById('send-text');
 
-  if (type === 'payment') {
-    paymentFields.classList.remove('hidden');
-    messageTextGroup.classList.add('hidden');
-  } else if (type === 'catalogue') {
-    paymentFields.classList.add('hidden');
-    messageTextGroup.classList.remove('hidden');
+  if (type === 'catalogue') {
     sendText.value = defaultTemplateText;
   } else {
-    paymentFields.classList.add('hidden');
-    messageTextGroup.classList.remove('hidden');
     sendText.value = '';
   }
 }
@@ -517,38 +502,24 @@ async function handleDirectSend(e) {
   const sendBtn = document.getElementById('btn-send-message');
   const statusMsg = document.getElementById('send-status-msg');
   const number = document.getElementById('send-number').value.trim();
-  const type = document.getElementById('send-type').value;
+  const instance = document.getElementById('send-instance').value.trim() || 'zari';
+  const text = document.getElementById('send-text').value.trim();
 
-  if (!number) return;
+  if (!number || !text) return;
 
   sendBtn.disabled = true;
   statusMsg.className = 'send-status-msg';
   statusMsg.innerText = 'Sending...';
 
   try {
-    let endpoint = '/api/message/send';
-    let payload = {};
-
-    if (type === 'payment') {
-      endpoint = '/api/send-payment';
-      payload = {
-        patientMobile: number,
-        patientName: document.getElementById('pay-name').value.trim() || 'Valued Customer',
-        paymentAmount: Number(document.getElementById('pay-amount').value) || 0,
-        amountType: document.getElementById('pay-type').value,
-        updatedDeposit: Number(document.getElementById('pay-amount').value) || 0,
-      };
-    } else {
-      payload = {
-        number: number,
-        text: document.getElementById('send-text').value.trim(),
-      };
-    }
-
-    const res = await fetch(endpoint, {
+    const res = await fetch('/api/message/send', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
+      body: JSON.stringify({
+        number: number,
+        text: text,
+        instance: instance,
+      }),
     });
 
     const data = await res.json();
@@ -596,7 +567,7 @@ async function configureWebhook() {
     const data = await res.json();
 
     if (data.success) {
-      alert(`✅ Webhook successfully configured on Evolution API for instance "${data.data?.instanceId || 'zari'}"!`);
+      alert(`✅ Webhook successfully configured on Evolution API!`);
     } else {
       alert(`❌ Failed to configure webhook: ${JSON.stringify(data.error)}`);
     }
@@ -614,6 +585,5 @@ async function configureWebhook() {
 document.addEventListener('DOMContentLoaded', () => {
   fetchRules();
   fetchStatusAndLogs();
-  // Poll every 5 seconds for live status & activity updates
   setInterval(fetchStatusAndLogs, 5000);
 });

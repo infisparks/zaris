@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Zari WhatsApp Automation - Keyword & Catalogue Auto Reply</title>
+  <title>Zari WhatsApp Automation - Multi-Instance Keyword Auto-Reply</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -17,8 +17,8 @@
         <div class="brand-block">
           <div class="brand-avatar">Z</div>
           <div>
-            <h1 class="brand-title">Zari WhatsApp Automation</h1>
-            <p class="brand-subtitle">Evolution API • Instance: <strong id="header-instance-name">zari</strong></p>
+            <h1 class="brand-title">WhatsApp Keyword Auto-Reply Automation</h1>
+            <p class="brand-subtitle">Evolution API • Default Instance: <strong id="header-instance-name">zari</strong></p>
           </div>
         </div>
         <div class="header-actions">
@@ -53,7 +53,7 @@
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#059669" stroke-width="2"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"></path><line x1="3" y1="6" x2="21" y2="6"></line><path d="M16 10a4 4 0 0 1-8 0"></path></svg>
           </div>
           <div>
-            <span class="metric-label">Keyword Triggers</span>
+            <span class="metric-label">Keyword Auto-Replies</span>
             <h3 class="metric-value" id="stat-triggers">0</h3>
           </div>
         </div>
@@ -79,12 +79,12 @@
         </div>
       </section>
 
-      <!-- Section: Multi-User & Multi-Keyword Auto-Reply Rules Manager -->
+      <!-- Section: Multi-Instance Auto-Reply Rules Manager -->
       <section class="card">
         <div class="card-header flex-between">
           <div>
-            <h2 class="card-title">Auto-Reply Keyword Rules</h2>
-            <p class="card-subtitle">Configure separate keywords and custom messages for specific users/numbers or all instances.</p>
+            <h2 class="card-title">Instance Keyword Auto-Reply Rules</h2>
+            <p class="card-subtitle">Set up what message to send for each instance when incoming messages contain specific keywords.</p>
           </div>
           <div class="action-buttons-wrap">
             <button class="btn btn-secondary btn-sm" onclick="resetToDefaultRules()" title="Reset to default catalogue rule">
@@ -93,7 +93,7 @@
             </button>
             <button class="btn btn-primary btn-sm" onclick="openAddRuleModal()">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-              + Add New Rule
+              + Add Rule
             </button>
           </div>
         </div>
@@ -102,11 +102,11 @@
           <table class="data-table">
             <thead>
               <tr>
-                <th style="width: 22%;">Rule Name & Target</th>
-                <th style="width: 14%;">Target User / Numbers</th>
-                <th style="width: 22%;">Trigger Keywords</th>
-                <th style="width: 26%;">Configured Response Message</th>
-                <th style="width: 8%;">Status</th>
+                <th style="width: 18%;">WhatsApp Instance</th>
+                <th style="width: 24%;">If Incoming Contains (Keywords)</th>
+                <th style="width: 32%;">Message To Send</th>
+                <th style="width: 12%;">Target Users</th>
+                <th style="width: 6%;">Status</th>
                 <th style="width: 8%; text-align: right;">Actions</th>
               </tr>
             </thead>
@@ -121,30 +121,30 @@
 
       <!-- Grid of 2 Cards: Rule Simulator & Webhook Setup -->
       <section class="two-col-grid">
-        <!-- Card 1: Interactive Rule Tester / Simulator -->
+        <!-- Card 1: Multi-Instance Rule Tester -->
         <div class="card">
           <div class="card-header">
-            <h2 class="card-title">Rule & Keyword Simulator</h2>
-            <span class="badge badge-indigo">Live Match Engine</span>
+            <h2 class="card-title">Instance Rule Simulator</h2>
+            <span class="badge badge-indigo">Live Match Tester</span>
           </div>
           <div class="card-body">
-            <p class="form-helper" style="margin-bottom: 12px;">Test how your keywords and numbers trigger customized messages before sending.</p>
+            <p class="form-helper" style="margin-bottom: 12px;">Test which instance and keyword triggers your configured auto-reply message.</p>
             
             <div class="form-grid-2">
+              <div class="form-group">
+                <label class="form-label" for="test-instance-name">WhatsApp Instance <span class="required">*</span></label>
+                <input type="text" id="test-instance-name" class="form-input" value="zari" placeholder="e.g. zari or instance_2" />
+              </div>
               <div class="form-group">
                 <label class="form-label" for="test-sender-number">Simulated Sender Number</label>
                 <input type="text" id="test-sender-number" class="form-input" value="919423185940" placeholder="e.g. 919423185940" />
               </div>
-              <div class="form-group">
-                <label class="form-label" for="test-instance-name">WhatsApp Instance</label>
-                <input type="text" id="test-instance-name" class="form-input" value="zari" placeholder="e.g. zari" />
-              </div>
             </div>
 
             <div class="form-group">
-              <label class="form-label" for="test-input-text">Simulated Incoming Message</label>
+              <label class="form-label" for="test-input-text">Simulated Incoming Message <span class="required">*</span></label>
               <div class="input-with-button">
-                <input type="text" id="test-input-text" class="form-input" value="Please send your catalogue" placeholder="Type test keyword or message..." />
+                <input type="text" id="test-input-text" class="form-input" value="Please share your catalogue" placeholder="Type test keyword..." />
                 <button class="btn btn-primary" onclick="runRuleSimulation()">Test Match</button>
               </div>
             </div>
@@ -153,7 +153,7 @@
           </div>
         </div>
 
-        <!-- Card 2: Webhook Configuration Assistant -->
+        <!-- Card 2: Webhook Assistant -->
         <div class="card">
           <div class="card-header">
             <h2 class="card-title">Webhook Configuration</h2>
@@ -166,60 +166,42 @@
                 <input type="text" id="webhook-url-input" class="form-input" placeholder="https://your-domain.com/webhook" />
                 <button class="btn btn-primary" id="btn-save-webhook" onclick="configureWebhook()">Save & Sync</button>
               </div>
-              <p class="form-helper">Enter your public domain or ngrok URL to route incoming messages from Evolution API into this server.</p>
+              <p class="form-helper">Enter your public server domain to route messages from Evolution API to this bot.</p>
             </div>
 
             <div class="info-card-box">
-              <div class="info-card-header">💡 How Multi-User Keyword Routing Works:</div>
+              <div class="info-card-header">⚡ How Multi-Instance Auto-Replies Work:</div>
               <ul class="info-card-list">
-                <li><strong>Specific Numbers:</strong> If a rule specifies a phone number, only that number's matching keyword triggers its custom reply.</li>
-                <li><strong>All Users (*):</strong> Rules with no numbers or wildcard match any incoming user with the configured keywords.</li>
-                <li><strong>Default Catalogue:</strong> Out-of-the-box rule sends professional catalogue message when keywords like "catalogue" are received.</li>
+                <li><strong>Instance Name:</strong> Match specific WhatsApp numbers/instances (e.g. <code>zari</code>, <code>store_2</code>, or <code>*</code> for all).</li>
+                <li><strong>Keywords:</strong> When an incoming message contains any of the specified keywords, the configured message is sent back automatically.</li>
+                <li><strong>Fully Customizable:</strong> Add, edit, or remove any instance rule with custom text and catalogue URLs at any time.</li>
               </ul>
             </div>
           </div>
         </div>
       </section>
 
-      <!-- Card: Direct WhatsApp Sender Form -->
+      <!-- Direct Message Sender -->
       <section class="card">
         <div class="card-header">
           <h2 class="card-title">Send Direct WhatsApp Message</h2>
         </div>
         <div class="card-body">
           <form id="direct-send-form" onsubmit="handleDirectSend(event)">
-            <div class="form-grid-2">
+            <div class="form-grid-3">
+              <div class="form-group">
+                <label class="form-label" for="send-instance">From Instance</label>
+                <input type="text" id="send-instance" class="form-input" value="zari" placeholder="Instance name (e.g. zari)" />
+              </div>
               <div class="form-group">
                 <label class="form-label" for="send-number">Recipient WhatsApp Number <span class="required">*</span></label>
                 <input type="text" id="send-number" class="form-input" placeholder="919423185940 (with country code)" required />
               </div>
               <div class="form-group">
-                <label class="form-label" for="send-type">Message Type</label>
+                <label class="form-label" for="send-type">Message Preset</label>
                 <select id="send-type" class="form-input" onchange="onMessageTypeChange()">
                   <option value="custom">Custom Text Message</option>
-                  <option value="catalogue">Send Catalogue Link</option>
-                  <option value="payment">Send Payment Receipt</option>
-                </select>
-              </div>
-            </div>
-
-            <!-- Payment details subform (optional) -->
-            <div id="payment-fields" class="form-grid-3 hidden">
-              <div class="form-group">
-                <label class="form-label" for="pay-name">Customer / Patient Name</label>
-                <input type="text" id="pay-name" class="form-input" placeholder="e.g. John Doe" />
-              </div>
-              <div class="form-group">
-                <label class="form-label" for="pay-amount">Amount (Rs)</label>
-                <input type="number" id="pay-amount" class="form-input" placeholder="e.g. 5000" />
-              </div>
-              <div class="form-group">
-                <label class="form-label" for="pay-type">Amount Type</label>
-                <select id="pay-type" class="form-input">
-                  <option value="deposit">Deposit</option>
-                  <option value="advance">Advance</option>
-                  <option value="settlement">Settlement</option>
-                  <option value="refund">Refund</option>
+                  <option value="catalogue">Insert Catalogue Link</option>
                 </select>
               </div>
             </div>
@@ -232,7 +214,7 @@
             <div class="form-actions">
               <button type="submit" class="btn btn-primary" id="btn-send-message">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
-                Send via WhatsApp
+                Send Message
               </button>
               <span id="send-status-msg" class="send-status-msg"></span>
             </div>
@@ -245,7 +227,7 @@
         <div class="card-header">
           <div>
             <h2 class="card-title">Live Message & Auto-Reply Activity</h2>
-            <p class="card-subtitle">Real-time feed of incoming WhatsApp messages and matched auto-reply rules</p>
+            <p class="card-subtitle">Real-time incoming WhatsApp messages and instance auto-replies</p>
           </div>
           <button class="btn btn-secondary btn-sm" onclick="fetchStatusAndLogs()">
             Refresh Table
@@ -256,6 +238,7 @@
             <thead>
               <tr>
                 <th>Sender</th>
+                <th>Instance</th>
                 <th>Incoming Message</th>
                 <th>Matched Rule</th>
                 <th>Auto-Reply Status</th>
@@ -264,7 +247,7 @@
             </thead>
             <tbody id="logs-table-body">
               <tr>
-                <td colspan="5" class="table-empty">No recent messages yet. Waiting for incoming WhatsApp messages...</td>
+                <td colspan="6" class="table-empty">No recent messages yet. Waiting for incoming WhatsApp messages...</td>
               </tr>
             </tbody>
           </table>
@@ -274,7 +257,7 @@
 
     <!-- Footer -->
     <footer class="app-footer">
-      <p>Zari WhatsApp Automation Server • Built with Node.js & Evolution API</p>
+      <p>WhatsApp Automation Server • Multi-Instance Keyword Auto-Reply</p>
     </footer>
   </div>
 
@@ -286,7 +269,7 @@
           <div class="modal-icon-badge">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4F46E5" stroke-width="2"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
           </div>
-          <h3 class="modal-title" id="modal-title">Add Auto-Reply Rule</h3>
+          <h3 class="modal-title" id="modal-title">Configure Instance Auto-Reply</h3>
         </div>
         <button class="modal-close-btn" onclick="closeRuleModal()" aria-label="Close modal">&times;</button>
       </div>
@@ -295,65 +278,56 @@
         <input type="hidden" id="rule-id" value="" />
 
         <div class="modal-body">
-          <!-- Rule Name -->
-          <div class="form-group">
-            <label class="form-label" for="rule-name">Rule Name / Description <span class="required">*</span></label>
-            <input type="text" id="rule-name" class="form-input" placeholder="e.g. VIP Client Catalogue or Enquiry Handler" required />
-          </div>
-
-          <!-- 2 Columns: Phone Numbers & Instance -->
+          <!-- 1. Instance Name & Keywords (The 2 primary triggers) -->
           <div class="form-grid-2">
-            <div class="form-group">
-              <label class="form-label" for="rule-phone-numbers">
-                Target User / Numbers
-                <span class="label-hint">(Optional)</span>
-              </label>
-              <input type="text" id="rule-phone-numbers" class="form-input" placeholder="e.g. 919423185940, 919876543210 (or leave empty for all)" />
-              <span class="field-help">Leave empty or * for all users. Enter comma-separated phone numbers for specific users.</span>
-            </div>
-
             <div class="form-group">
               <label class="form-label" for="rule-instance">
-                WhatsApp Instance
-                <span class="label-hint">(Optional)</span>
+                WhatsApp Instance Name <span class="required">*</span>
               </label>
-              <input type="text" id="rule-instance" class="form-input" placeholder="e.g. zari or * for all" value="zari" />
-              <span class="field-help">Target Evolution instance name or * for any instance.</span>
+              <input type="text" id="rule-instance" class="form-input" placeholder="e.g. zari, store2, or * for all" value="zari" required />
+              <span class="field-help">The Evolution API instance that receives the message.</span>
             </div>
-          </div>
 
-          <!-- 2 Columns: Trigger Keywords & Matching Mode -->
-          <div class="form-grid-2">
             <div class="form-group">
               <label class="form-label" for="rule-keywords">
-                Trigger Keywords <span class="required">*</span>
+                If Incoming Message Contains <span class="required">*</span>
               </label>
               <input type="text" id="rule-keywords" class="form-input" placeholder="e.g. catalogue, catalog, price, offer" required />
-              <span class="field-help">Comma-separated list of keywords that trigger this rule.</span>
-            </div>
-
-            <div class="form-group">
-              <label class="form-label" for="rule-match-type">Match Type</label>
-              <select id="rule-match-type" class="form-input">
-                <option value="contains">Contains keyword (Recommended)</option>
-                <option value="exact">Exact message match only</option>
-              </select>
-              <span class="field-help">How incoming text is evaluated against keywords.</span>
+              <span class="field-help">Comma-separated keywords (case-insensitive).</span>
             </div>
           </div>
 
-          <!-- Configured Reply Message -->
+          <!-- 2. Message To Send (The response) -->
           <div class="form-group">
             <div class="flex-between" style="margin-bottom: 6px;">
               <label class="form-label" for="rule-reply-message" style="margin-bottom: 0;">
-                Auto-Reply Message <span class="required">*</span>
+                What Message We Need To Send <span class="required">*</span>
               </label>
               <button type="button" class="btn-text-link" onclick="insertDefaultCatalogueTemplate()">
-                Insert Default Catalogue Template
+                Insert Default Catalogue Message
               </button>
             </div>
-            <textarea id="rule-reply-message" class="form-textarea" rows="6" placeholder="Type the WhatsApp response message that will be sent..." required></textarea>
-            <span class="field-help">Supports variables: <code>{{name}}</code>, <code>{{sender}}</code>, <code>{{catalogue_url}}</code></span>
+            <textarea id="rule-reply-message" class="form-textarea" rows="6" placeholder="Type the message to send when this instance receives the keywords above..." required></textarea>
+            <span class="field-help">Enter any custom text or link. Supports variable: <code>{{catalogue_url}}</code></span>
+          </div>
+
+          <!-- 3. Optional Settings (Rule Title & Specific Users) -->
+          <div class="form-grid-2">
+            <div class="form-group">
+              <label class="form-label" for="rule-name">
+                Rule Label
+                <span class="label-hint">(Optional)</span>
+              </label>
+              <input type="text" id="rule-name" class="form-input" placeholder="e.g. Zari Main Catalogue" />
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" for="rule-phone-numbers">
+                Specific Numbers Filter
+                <span class="label-hint">(Optional)</span>
+              </label>
+              <input type="text" id="rule-phone-numbers" class="form-input" placeholder="Leave empty for all users, or enter 919423185940" />
+            </div>
           </div>
 
           <!-- Rule Status Toggle -->
@@ -361,7 +335,7 @@
             <label class="checkbox-label">
               <input type="checkbox" id="rule-enabled" checked />
               <span class="checkbox-custom"></span>
-              <span class="checkbox-text">Enable this rule (active)</span>
+              <span class="checkbox-text">Enable this auto-reply rule (active)</span>
             </label>
           </div>
         </div>

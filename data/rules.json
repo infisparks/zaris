@@ -1,8 +1,8 @@
 [
   {
     "id": "rule-default-catalogue",
-    "name": "Catalogue Auto-Reply (Default)",
-    "instance": "*",
+    "name": "Default Catalogue Auto-Reply",
+    "instance": "zari",
     "phoneNumbers": [],
     "keywords": [
       "catalogue",

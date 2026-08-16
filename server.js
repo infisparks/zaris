@@ -32,8 +32,8 @@ function getDefaultRules() {
   return [
     {
       id: 'rule-default-catalogue',
-      name: 'Catalogue Auto-Reply (Default)',
-      instance: '*',
+      name: 'Default Catalogue Auto-Reply',
+      instance: 'zari',
       phoneNumbers: [],
       keywords: [
         'catalogue',
@@ -107,75 +107,97 @@ function cleanPhoneNumber(num) {
   return String(num).replace(/@.*$/, '').replace(/[^0-9]/g, '');
 }
 
-// Match Rule Engine
-function findMatchingRule(text, senderNumber, instanceName) {
+// Match Rule Engine with Instance & Keyword Routing
+function findMatchingRule(text, senderNumber, incomingInstance) {
   if (!text || typeof text !== 'string') {
     return { matched: false };
   }
 
   const normalizedText = text.toLowerCase().trim();
   const cleanedSender = cleanPhoneNumber(senderNumber);
-  const currentInstance = (instanceName || INSTANCE_NAME).toLowerCase().trim();
+  const currentInstance = (incomingInstance || INSTANCE_NAME).toLowerCase().trim();
 
   const rules = loadRules();
   const activeRules = rules.filter((r) => r.enabled !== false);
 
-  // Group rules into: (1) Specific Phone Number Rules (higher priority), (2) Wildcard / All User Rules
-  const specificUserRules = [];
-  const globalRules = [];
+  // Group rules into priority tiers:
+  // Tier 1: Exact Instance Match + Specific Phone Number
+  // Tier 2: Exact Instance Match + All Users (*)
+  // Tier 3: Wildcard Instance (*) + Specific Phone Number
+  // Tier 4: Wildcard Instance (*) + All Users (*)
+  const tier1 = [];
+  const tier2 = [];
+  const tier3 = [];
+  const tier4 = [];
 
   for (const rule of activeRules) {
-    // Check instance match: '*' or matches currentInstance
-    const ruleInstance = (rule.instance || '*').toLowerCase().trim();
-    if (ruleInstance !== '*' && ruleInstance !== currentInstance) {
+    const ruleInst = (rule.instance || '*').toLowerCase().trim();
+    const isExactInstance = ruleInst !== '*' && ruleInst === currentInstance;
+    const isWildcardInstance = ruleInst === '*';
+
+    if (!isExactInstance && !isWildcardInstance) {
       continue;
     }
 
     const ruleNumbers = Array.isArray(rule.phoneNumbers)
       ? rule.phoneNumbers.map(cleanPhoneNumber).filter(Boolean)
       : [];
+    const hasSpecificNumbers = ruleNumbers.length > 0 && !ruleNumbers.includes('*');
 
-    if (ruleNumbers.length > 0 && !ruleNumbers.includes('*')) {
-      specificUserRules.push({ rule, numbers: ruleNumbers });
-    } else {
-      globalRules.push(rule);
+    if (isExactInstance && hasSpecificNumbers) {
+      tier1.push({ rule, numbers: ruleNumbers });
+    } else if (isExactInstance && !hasSpecificNumbers) {
+      tier2.push(rule);
+    } else if (isWildcardInstance && hasSpecificNumbers) {
+      tier3.push({ rule, numbers: ruleNumbers });
+    } else if (isWildcardInstance && !hasSpecificNumbers) {
+      tier4.push(rule);
     }
   }
 
-  // 1. Check specific user rules first
-  for (const item of specificUserRules) {
-    const isTargetUser = item.numbers.some((num) => {
-      if (!num || !cleanedSender) return false;
-      return cleanedSender === num || cleanedSender.endsWith(num) || num.endsWith(cleanedSender);
-    });
-
+  // Tier 1 Check
+  for (const item of tier1) {
+    const isTargetUser = item.numbers.some((num) => num && (cleanedSender === num || cleanedSender.endsWith(num) || num.endsWith(cleanedSender)));
     if (isTargetUser && isKeywordMatch(normalizedText, item.rule)) {
-      return {
-        matched: true,
-        rule: item.rule,
-        replyText: renderReplyMessage(item.rule.replyMessage, {
-          sender: cleanedSender,
-          instance: instanceName || INSTANCE_NAME,
-        }),
-      };
+      return buildMatchResponse(item.rule, cleanedSender, currentInstance);
     }
   }
 
-  // 2. Check global rules
-  for (const rule of globalRules) {
+  // Tier 2 Check
+  for (const rule of tier2) {
     if (isKeywordMatch(normalizedText, rule)) {
-      return {
-        matched: true,
-        rule: rule,
-        replyText: renderReplyMessage(rule.replyMessage, {
-          sender: cleanedSender,
-          instance: instanceName || INSTANCE_NAME,
-        }),
-      };
+      return buildMatchResponse(rule, cleanedSender, currentInstance);
+    }
+  }
+
+  // Tier 3 Check
+  for (const item of tier3) {
+    const isTargetUser = item.numbers.some((num) => num && (cleanedSender === num || cleanedSender.endsWith(num) || num.endsWith(cleanedSender)));
+    if (isTargetUser && isKeywordMatch(normalizedText, item.rule)) {
+      return buildMatchResponse(item.rule, cleanedSender, currentInstance);
+    }
+  }
+
+  // Tier 4 Check
+  for (const rule of tier4) {
+    if (isKeywordMatch(normalizedText, rule)) {
+      return buildMatchResponse(rule, cleanedSender, currentInstance);
     }
   }
 
   return { matched: false };
+}
+
+function buildMatchResponse(rule, sender, instance) {
+  return {
+    matched: true,
+    rule: rule,
+    targetInstance: rule.instance && rule.instance !== '*' ? rule.instance : instance,
+    replyText: renderReplyMessage(rule.replyMessage, {
+      sender: sender,
+      instance: instance || INSTANCE_NAME,
+    }),
+  };
 }
 
 function isKeywordMatch(normalizedText, rule) {
@@ -191,12 +213,10 @@ function isKeywordMatch(normalizedText, rule) {
     return keywords.some((kw) => normalizedText === kw);
   }
 
-  // Default: contains keyword
+  // Default: contains keyword (substring or regex boundary)
   return keywords.some((kw) => {
     if (!kw) return false;
-    // Check if substring exists
     if (normalizedText.includes(kw)) return true;
-    // Word boundary regex for clean match
     try {
       const regex = new RegExp(`(^|\\s|[^a-zA-Z0-9])${kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}($|\\s|[^a-zA-Z0-9])`, 'i');
       return regex.test(normalizedText);
@@ -233,7 +253,7 @@ function addActivityLog(log) {
   return entry;
 }
 
-// Deduplication Cache to prevent duplicate replies within 15 seconds
+// Deduplication Cache
 const processedMessagesCache = new Map();
 const DEDUPE_TTL_MS = 15000;
 
@@ -320,7 +340,7 @@ async function sendWhatsAppMessage(number, text, options = {}) {
     linkPreview: options.linkPreview !== undefined ? options.linkPreview : true,
   };
 
-  console.log(`\n📤 [OUTGOING REQUEST] Sending WhatsApp message to: ${cleanNumber} (Instance: ${targetInstance})`);
+  console.log(`\n📤 [OUTGOING REQUEST] Sending WhatsApp message to: ${cleanNumber} (Instance: "${targetInstance}")`);
   console.log(`   URL: ${url}`);
   console.log(`   Text Preview: "${text.substring(0, 80).replace(/\n/g, ' ')}..."`);
 
@@ -340,13 +360,13 @@ async function sendWhatsAppMessage(number, text, options = {}) {
     throw new Error(errFormatted);
   }
 
-  console.log(`✅ [OUTGOING SUCCESS] Message sent to ${cleanNumber}! Response ID: ${data?.key?.id || data?.id || 'OK'}`);
+  console.log(`✅ [OUTGOING SUCCESS] Message sent to ${cleanNumber} on "${targetInstance}"! Response ID: ${data?.key?.id || data?.id || 'OK'}`);
   serverStats.repliesSent++;
   return data;
 }
 
 // Helper: Extract text & details from Evolution API message formats
-function parseIncomingMessage(body) {
+function parseIncomingMessage(body, defaultInstance = INSTANCE_NAME) {
   if (!body) return null;
 
   let payload = body;
@@ -355,7 +375,7 @@ function parseIncomingMessage(body) {
   }
 
   const event = payload.event || payload.type || 'MESSAGES_UPSERT';
-  const instance = payload.instance || INSTANCE_NAME;
+  const instance = payload.instance || payload.data?.instance || defaultInstance || INSTANCE_NAME;
 
   let msgData = payload.data || payload;
   if (Array.isArray(msgData)) {
@@ -477,19 +497,20 @@ function parseIncomingMessage(body) {
 }
 
 // ==========================================
-// Webhook Route (Receives messages from Evolution API)
+// Webhook Routes (Supports single or multi-instance paths)
 // ==========================================
-app.post(['/webhook', '/api/webhook'], async (req, res) => {
-  // Acknowledge webhook immediately to prevent timeouts
+app.post(['/webhook', '/webhook/:instance', '/api/webhook', '/api/webhook/:instance'], async (req, res) => {
+  // Acknowledge webhook immediately
   res.status(200).json({ received: true });
 
+  const urlInstance = req.params.instance || req.query.instance;
   const timestamp = new Date().toLocaleTimeString();
   console.log(`\n======================================================`);
   console.log(`📥 [WEBHOOK RECEIVED] ${timestamp}`);
   console.log(`------------------------------------------------------`);
 
   try {
-    const parsed = parseIncomingMessage(req.body);
+    const parsed = parseIncomingMessage(req.body, urlInstance);
 
     if (!parsed || (!parsed.remoteJid && !parsed.senderNumber)) {
       console.log(`⚠️ [WEBHOOK NOTICE] Received request but could not extract phone number / remoteJid.`);
@@ -526,14 +547,14 @@ app.post(['/webhook', '/api/webhook'], async (req, res) => {
     const { remoteJid, senderNumber, messageId, pushName, text, isGroup, instance } = parsed;
 
     // Deduplication check
-    const dedupeKey = `${remoteJid}_${messageId || text}`;
+    const dedupeKey = `${instance}_${remoteJid}_${messageId || text}`;
     if (isRecentlyProcessed(dedupeKey)) {
-      console.log(`⚠️ [WEBHOOK SKIPPED] Duplicate message ignored for ${senderNumber} (ID: ${messageId})`);
+      console.log(`⚠️ [WEBHOOK SKIPPED] Duplicate message ignored for ${senderNumber} on instance "${instance}" (ID: ${messageId})`);
       console.log(`======================================================\n`);
       return;
     }
 
-    console.log(`\n📩 [MESSAGE ACCEPTED] From: ${pushName || 'User'} (${senderNumber}) | Text: "${text}"`);
+    console.log(`\n📩 [MESSAGE ACCEPTED] Instance: "${instance}" | From: ${pushName || 'User'} (${senderNumber}) | Text: "${text}"`);
 
     // Automatically mark the message as read
     if (messageId && remoteJid) {
@@ -542,18 +563,18 @@ app.post(['/webhook', '/api/webhook'], async (req, res) => {
       );
     }
 
-    // Check matching rule via Rule Engine
+    // Check matching rule via Rule Engine (Instance + Keyword Match)
     const matchResult = findMatchingRule(text, senderNumber, instance);
 
     if (matchResult.matched && matchResult.rule) {
       serverStats.catalogueTriggers++;
-      const { rule, replyText } = matchResult;
+      const { rule, replyText, targetInstance } = matchResult;
 
-      console.log(`🎯 [RULE MATCHED: "${rule.name}"] For sender: ${senderNumber} on instance "${instance}"`);
-      console.log(`   Preparing reply: "${replyText.substring(0, 60).replace(/\n/g, ' ')}..."`);
+      console.log(`🎯 [RULE MATCHED: "${rule.name}"] for Instance: "${instance}" (Reply via: "${targetInstance}")`);
+      console.log(`   Keywords: [${(rule.keywords || []).join(', ')}]`);
+      console.log(`   Preparing reply: "${replyText.substring(0, 80).replace(/\n/g, ' ')}..."`);
 
       try {
-        const targetInstance = rule.instance && rule.instance !== '*' ? rule.instance : instance;
         const result = await sendWhatsAppMessage(senderNumber, replyText, { instance: targetInstance });
 
         addActivityLog({
@@ -570,7 +591,7 @@ app.post(['/webhook', '/api/webhook'], async (req, res) => {
           instance: targetInstance,
         });
 
-        console.log(`✅ [AUTO-REPLY SUCCESS] Sent rule "${rule.name}" response to ${senderNumber}!`);
+        console.log(`✅ [AUTO-REPLY SUCCESS] Sent rule "${rule.name}" response to ${senderNumber} via "${targetInstance}"!`);
       } catch (sendErr) {
         console.error(`❌ [AUTO-REPLY FAILED] Error sending response to ${senderNumber}:`, sendErr.message);
 
@@ -585,7 +606,7 @@ app.post(['/webhook', '/api/webhook'], async (req, res) => {
           replyText: replyText,
           error: sendErr.message,
           messageId: messageId,
-          instance: instance,
+          instance: targetInstance,
         });
       }
     } else {
@@ -600,7 +621,7 @@ app.post(['/webhook', '/api/webhook'], async (req, res) => {
         isGroup: isGroup,
         instance: instance,
       });
-      console.log(`ℹ️ [MESSAGE LOGGED ONLY] Text "${text}" from ${senderNumber} did not match any active rules.`);
+      console.log(`ℹ️ [MESSAGE LOGGED ONLY] Text "${text}" from ${senderNumber} did not match any rule on instance "${instance}".`);
     }
 
     console.log(`======================================================\n`);
@@ -629,17 +650,18 @@ app.get('/api/rules', (req, res) => {
 app.post('/api/rules', (req, res) => {
   const { id, name, instance, phoneNumbers, keywords, matchType, replyMessage, enabled } = req.body;
 
-  if (!name || !keywords || !replyMessage) {
+  if (!keywords || !replyMessage) {
     return res.status(400).json({
       success: false,
-      error: 'Rule "name", "keywords", and "replyMessage" are required fields.',
+      error: '"keywords" and "replyMessage" are required fields.',
     });
   }
 
   const rules = loadRules();
   const ruleId = id || `rule-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`;
+  const cleanInstance = (instance || INSTANCE_NAME || '*').trim();
 
-  // Normalize keywords (array or comma-separated string)
+  // Normalize keywords
   let parsedKeywords = [];
   if (Array.isArray(keywords)) {
     parsedKeywords = keywords.map((k) => String(k).trim()).filter(Boolean);
@@ -647,7 +669,7 @@ app.post('/api/rules', (req, res) => {
     parsedKeywords = keywords.split(',').map((k) => k.trim()).filter(Boolean);
   }
 
-  // Normalize phone numbers (array or comma-separated string)
+  // Normalize phone numbers
   let parsedNumbers = [];
   if (Array.isArray(phoneNumbers)) {
     parsedNumbers = phoneNumbers.map(cleanPhoneNumber).filter(Boolean);
@@ -660,11 +682,13 @@ app.post('/api/rules', (req, res) => {
       .filter(Boolean);
   }
 
+  const ruleTitle = name ? name.trim() : `Instance "${cleanInstance}" - [${parsedKeywords.slice(0, 3).join(', ')}]`;
+
   const existingIndex = rules.findIndex((r) => r.id === ruleId);
   const ruleObj = {
     id: ruleId,
-    name: name.trim(),
-    instance: (instance || '*').trim(),
+    name: ruleTitle,
+    instance: cleanInstance,
     phoneNumbers: parsedNumbers,
     keywords: parsedKeywords,
     matchType: matchType === 'exact' ? 'exact' : 'contains',
@@ -697,7 +721,7 @@ app.put('/api/rules/:id', (req, res) => {
   const rules = loadRules();
   const existingIndex = rules.findIndex((r) => r.id === id);
 
-  if (existingIndex === 0 && !rules[existingIndex]) {
+  if (existingIndex < 0) {
     return res.status(404).json({ success: false, error: `Rule with ID "${id}" not found.` });
   }
 
@@ -777,7 +801,7 @@ app.post('/api/rules/reset', (req, res) => {
 // Standard API Routes
 // ==========================================
 
-// 1. Direct Message Sender API (General)
+// 1. Direct Message Sender API
 app.post('/api/message/send', async (req, res) => {
   const { number, text, delay, linkPreview, instance } = req.body;
 
@@ -812,35 +836,7 @@ app.post('/api/message/send', async (req, res) => {
   }
 });
 
-// 2. Patient / Customer Payment Notification API
-app.post('/api/send-payment', async (req, res) => {
-  const { patientName, patientMobile, paymentAmount, amountType, updatedDeposit, instance } = req.body;
-
-  if (!patientMobile) {
-    return res.status(400).json({ success: false, error: 'patientMobile is required.' });
-  }
-
-  let message = '';
-  const formattedAmount = Number(paymentAmount || 0).toLocaleString();
-  const formattedDeposit = Number(updatedDeposit || 0).toLocaleString();
-
-  if (amountType === 'advance' || amountType === 'deposit' || amountType === 'settlement') {
-    message = `Dear ${patientName || 'Customer'}, your payment of Rs ${formattedAmount} has been successfully added to your account. Your updated total deposit is Rs ${formattedDeposit}. Thank you for choosing our service.`;
-  } else if (amountType === 'refund') {
-    message = `Dear ${patientName || 'Customer'}, a refund of Rs ${formattedAmount} has been processed to your account. Your updated total deposit is Rs ${formattedDeposit}.`;
-  } else {
-    message = `Dear ${patientName || 'Customer'}, your transaction of Rs ${formattedAmount} has been processed. Total balance: Rs ${formattedDeposit}.`;
-  }
-
-  try {
-    const result = await sendWhatsAppMessage(patientMobile, message, { instance });
-    res.json({ success: true, message: 'Payment notification sent successfully', result });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-// 3. Status & Health Check API
+// 2. Status & Health Check API
 app.get('/api/status', async (req, res) => {
   let instanceState = 'unknown';
   let instanceData = null;
@@ -880,7 +876,7 @@ app.get('/api/status', async (req, res) => {
   });
 });
 
-// 4. Activity Logs API
+// 3. Activity Logs API
 app.get('/api/logs', (req, res) => {
   res.json({
     success: true,
@@ -889,11 +885,11 @@ app.get('/api/logs', (req, res) => {
   });
 });
 
-// 5. Test Trigger Simulator (Test custom keyword rules for any number and instance)
+// 4. Test Trigger Simulator (Test Instance + Keyword + Message rules)
 app.post('/api/test-trigger', async (req, res) => {
   const {
     testMessage = 'Can you send the catalogue?',
-    testSender = '919876543210',
+    testSender = '919423185940',
     testInstance = INSTANCE_NAME,
     sendRealMessage = false,
   } = req.body;
@@ -905,7 +901,7 @@ app.post('/api/test-trigger', async (req, res) => {
 
   if (matchResult.matched && sendRealMessage) {
     try {
-      await sendWhatsAppMessage(testSender, matchResult.replyText, { instance: testInstance });
+      await sendWhatsAppMessage(testSender, matchResult.replyText, { instance: matchResult.targetInstance || testInstance });
       replySent = true;
     } catch (err) {
       replyError = err.message;
@@ -916,6 +912,7 @@ app.post('/api/test-trigger', async (req, res) => {
     success: true,
     matched: matchResult.matched,
     matchedRule: matchResult.rule || null,
+    targetInstance: matchResult.targetInstance || testInstance,
     testMessage,
     testSender,
     testInstance,
@@ -925,7 +922,7 @@ app.post('/api/test-trigger', async (req, res) => {
   });
 });
 
-// 6. Webhook Configuration Assistant
+// 5. Webhook Configuration Assistant
 app.post('/api/webhook/configure', async (req, res) => {
   const { webhookUrl, instanceName } = req.body;
 
@@ -977,7 +974,7 @@ app.listen(PORT, '0.0.0.0', async () => {
   console.log(`======================================================`);
   console.log(`🚀 Server Running on: http://0.0.0.0:${PORT}`);
   console.log(`📡 Evolution API URL: ${EVOLUTION_API_URL}`);
-  console.log(`📱 Instance Name:    ${INSTANCE_NAME}`);
+  console.log(`📱 Default Instance: ${INSTANCE_NAME}`);
   console.log(`🔑 API Key Config:   ${API_KEY ? 'Configured ✅' : 'Missing ❌'}`);
   console.log(`🛍️  Catalogue URL:    ${CATALOGUE_URL}`);
   console.log(`📋 Rules Loaded:     ${loadRules().length} rule(s) configured`);
@@ -986,7 +983,6 @@ app.listen(PORT, '0.0.0.0', async () => {
   console.log(`🖥️  Admin Dashboard:  http://0.0.0.0:${PORT}/`);
   console.log(`======================================================\n`);
 
-  // Auto-sync Webhook URL with Evolution API on startup if WEBHOOK_PUBLIC_URL is configured
   if (WEBHOOK_PUBLIC_URL) {
     let targetWebhookUrl = WEBHOOK_PUBLIC_URL.trim();
     if (!targetWebhookUrl.endsWith('/webhook') && !targetWebhookUrl.endsWith('/api/webhook')) {
@@ -1018,7 +1014,6 @@ app.listen(PORT, '0.0.0.0', async () => {
     }
   }
 
-  // Quick verify instance connection on startup
   try {
     const checkRes = await fetch(`${EVOLUTION_API_URL}/instance/connectionState/${INSTANCE_NAME}`, {
       headers: getApiHeaders(),
@@ -1026,10 +1021,6 @@ app.listen(PORT, '0.0.0.0', async () => {
     if (checkRes.ok) {
       const stateData = await checkRes.json();
       console.log(`🟢 WhatsApp Instance "${INSTANCE_NAME}" Status: ${stateData?.instance?.state || 'open'}`);
-    } else {
-      console.warn(`⚠️ Could not verify instance "${INSTANCE_NAME}" status (HTTP ${checkRes.status})`);
     }
-  } catch (e) {
-    console.warn(`⚠️ Instance check warning: ${e.message}`);
-  }
+  } catch (e) {}
 });
