@@ -14,7 +14,7 @@ const INSTANCE_NAME = process.env.INSTANCE_NAME || 'zari';
 const CATALOGUE_URL = process.env.CATALOGUE_URL || 'https://wa.me/c/919423185940';
 const AUTO_READ_MESSAGES = process.env.AUTO_READ_MESSAGES !== 'false';
 const REPLY_DELAY_MS = parseInt(process.env.REPLY_DELAY_MS || '1000', 10);
-const WEBHOOK_PUBLIC_URL = process.env.WEBHOOK_PUBLIC_URL || process.env.WEBHOOK_URL || process.env.PUBLIC_URL || process.env.APP_URL || process.env.COOLIFY_URL || '';
+let WEBHOOK_PUBLIC_URL = (process.env.WEBHOOK_PUBLIC_URL || process.env.WEBHOOK_URL || process.env.PUBLIC_URL || process.env.APP_URL || process.env.COOLIFY_URL || 'https://zari.infiplus.in/webhook').trim();
 
 // Persistent Rules Storage
 const DATA_DIR = path.join(__dirname, 'data');
@@ -87,6 +87,70 @@ function saveRules(rules) {
   } catch (err) {
     console.error('❌ [Rules Save Error]:', err.message);
     return false;
+  }
+}
+
+// Helper: Evolution API Headers
+function getApiHeaders() {
+  return {
+    'Content-Type': 'application/json',
+    'apikey': API_KEY,
+  };
+}
+
+// Helper: Auto-sync webhook URL in Evolution API for any instance
+async function syncInstanceWebhook(instanceName) {
+  if (!instanceName || instanceName === '*') return false;
+  const cleanInst = instanceName.trim();
+
+  let targetWebhookUrl = WEBHOOK_PUBLIC_URL || 'https://zari.infiplus.in/webhook';
+  if (!targetWebhookUrl.endsWith('/webhook') && !targetWebhookUrl.endsWith('/api/webhook')) {
+    targetWebhookUrl = `${targetWebhookUrl.replace(/\/+$/, '')}/webhook`;
+  }
+
+  try {
+    const res = await fetch(`${EVOLUTION_API_URL}/webhook/set/${cleanInst}`, {
+      method: 'POST',
+      headers: getApiHeaders(),
+      body: JSON.stringify({
+        webhook: {
+          enabled: true,
+          url: targetWebhookUrl,
+          byEvents: false,
+          base64: false,
+          events: ['MESSAGES_UPSERT', 'MESSAGES_UPDATE', 'SEND_MESSAGE'],
+        },
+      }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok) {
+      console.log(`✅ [Webhook Synced] Instance "${cleanInst}" registered to: ${targetWebhookUrl}`);
+      return true;
+    } else {
+      console.warn(`⚠️ [Webhook Sync Note] Instance "${cleanInst}" HTTP ${res.status}:`, data);
+      return false;
+    }
+  } catch (err) {
+    console.warn(`⚠️ [Webhook Sync Error] Instance "${cleanInst}": ${err.message}`);
+    return false;
+  }
+}
+
+// Auto-sync all unique active instances in rules to Evolution API
+async function syncAllActiveInstancesWebhooks() {
+  const rules = loadRules();
+  const instances = new Set();
+  if (INSTANCE_NAME) instances.add(INSTANCE_NAME);
+
+  for (const rule of rules) {
+    if (rule.enabled !== false && rule.instance && rule.instance !== '*') {
+      instances.add(rule.instance.trim());
+    }
+  }
+
+  console.log(`📡 Auto-syncing webhooks for ${instances.size} instance(s): [${Array.from(instances).join(', ')}]...`);
+  for (const inst of instances) {
+    await syncInstanceWebhook(inst);
   }
 }
 
@@ -281,14 +345,6 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Helper: Evolution API Headers
-function getApiHeaders() {
-  return {
-    'Content-Type': 'application/json',
-    'apikey': API_KEY,
-  };
-}
-
 // Helper: Mark Message As Read via Evolution API
 async function markMessageAsRead(remoteJid, messageId, fromMe = false, targetInstance = INSTANCE_NAME) {
   if (!AUTO_READ_MESSAGES || !messageId || !remoteJid) return;
@@ -375,7 +431,14 @@ function parseIncomingMessage(body, defaultInstance = INSTANCE_NAME) {
   }
 
   const event = payload.event || payload.type || 'MESSAGES_UPSERT';
-  const instance = payload.instance || payload.data?.instance || defaultInstance || INSTANCE_NAME;
+  
+  // Robust instance discovery
+  const instance = payload.instance ||
+                   payload.data?.instance ||
+                   payload.instanceId ||
+                   payload.data?.instanceId ||
+                   defaultInstance ||
+                   INSTANCE_NAME;
 
   let msgData = payload.data || payload;
   if (Array.isArray(msgData)) {
@@ -646,8 +709,8 @@ app.get('/api/rules', (req, res) => {
   });
 });
 
-// Create or update a rule
-app.post('/api/rules', (req, res) => {
+// Create or update a rule (with automatic webhook sync)
+app.post('/api/rules', async (req, res) => {
   const { id, name, instance, phoneNumbers, keywords, matchType, replyMessage, enabled } = req.body;
 
   if (!keywords || !replyMessage) {
@@ -705,6 +768,11 @@ app.post('/api/rules', (req, res) => {
   }
 
   if (saveRules(rules)) {
+    // Automatically register/sync webhook for this instance on Evolution API
+    if (cleanInstance && cleanInstance !== '*') {
+      syncInstanceWebhook(cleanInstance).catch(() => {});
+    }
+
     res.json({
       success: true,
       message: existingIndex >= 0 ? 'Rule updated successfully' : 'Rule created successfully',
@@ -716,7 +784,7 @@ app.post('/api/rules', (req, res) => {
 });
 
 // Update specific rule by ID
-app.put('/api/rules/:id', (req, res) => {
+app.put('/api/rules/:id', async (req, res) => {
   const { id } = req.params;
   const rules = loadRules();
   const existingIndex = rules.findIndex((r) => r.id === id);
@@ -747,11 +815,13 @@ app.put('/api/rules/:id', (req, res) => {
           .filter(Boolean);
   }
 
+  const updatedInstance = instance !== undefined ? String(instance).trim() : current.instance || '*';
+
   const updatedRule = {
     ...current,
     id: id,
     name: name !== undefined ? String(name).trim() : current.name,
-    instance: instance !== undefined ? String(instance).trim() : current.instance || '*',
+    instance: updatedInstance,
     phoneNumbers: parsedNumbers,
     keywords: parsedKeywords,
     matchType: matchType !== undefined ? (matchType === 'exact' ? 'exact' : 'contains') : current.matchType || 'contains',
@@ -763,6 +833,9 @@ app.put('/api/rules/:id', (req, res) => {
   rules[existingIndex] = updatedRule;
 
   if (saveRules(rules)) {
+    if (updatedInstance && updatedInstance !== '*') {
+      syncInstanceWebhook(updatedInstance).catch(() => {});
+    }
     res.json({ success: true, message: 'Rule updated successfully', rule: updatedRule });
   } else {
     res.status(500).json({ success: false, error: 'Failed to update rule.' });
@@ -788,55 +861,27 @@ app.delete('/api/rules/:id', (req, res) => {
 });
 
 // Reset rules to default
-app.post('/api/rules/reset', (req, res) => {
+app.post('/api/rules/reset', async (req, res) => {
   const defaults = getDefaultRules();
   if (saveRules(defaults)) {
+    syncAllActiveInstancesWebhooks().catch(() => {});
     res.json({ success: true, message: 'Rules reset to default successfully', rules: defaults });
   } else {
     res.status(500).json({ success: false, error: 'Failed to reset rules.' });
   }
 });
 
-// ==========================================
-// Standard API Routes
-// ==========================================
-
-// 1. Direct Message Sender API
-app.post('/api/message/send', async (req, res) => {
-  const { number, text, delay, linkPreview, instance } = req.body;
-
-  if (!number || !text) {
-    return res.status(400).json({
-      success: false,
-      error: 'Both "number" and "text" fields are required.',
-    });
-  }
-
+// Force sync all instance webhooks endpoint
+app.post('/api/rules/sync-webhooks', async (req, res) => {
   try {
-    const result = await sendWhatsAppMessage(number, text, { delay, linkPreview, instance });
-
-    addActivityLog({
-      type: 'MANUAL_SEND',
-      status: 'SUCCESS',
-      sender: number,
-      replyText: text,
-      instance: instance || INSTANCE_NAME,
-    });
-
-    res.json({
-      success: true,
-      message: 'WhatsApp message sent successfully',
-      result,
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: error.message,
-    });
+    await syncAllActiveInstancesWebhooks();
+    res.json({ success: true, message: 'All instance webhooks synced to Evolution API successfully.' });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 
-// 2. Status & Health Check API
+// Status & Health Check API
 app.get('/api/status', async (req, res) => {
   let instanceState = 'unknown';
   let instanceData = null;
@@ -876,90 +921,13 @@ app.get('/api/status', async (req, res) => {
   });
 });
 
-// 3. Activity Logs API
+// Activity Logs API
 app.get('/api/logs', (req, res) => {
   res.json({
     success: true,
     logs: activityLogs,
     stats: serverStats,
   });
-});
-
-// 4. Test Trigger Simulator (Test Instance + Keyword + Message rules)
-app.post('/api/test-trigger', async (req, res) => {
-  const {
-    testMessage = 'Can you send the catalogue?',
-    testSender = '919423185940',
-    testInstance = INSTANCE_NAME,
-    sendRealMessage = false,
-  } = req.body;
-
-  const matchResult = findMatchingRule(testMessage, testSender, testInstance);
-
-  let replySent = false;
-  let replyError = null;
-
-  if (matchResult.matched && sendRealMessage) {
-    try {
-      await sendWhatsAppMessage(testSender, matchResult.replyText, { instance: matchResult.targetInstance || testInstance });
-      replySent = true;
-    } catch (err) {
-      replyError = err.message;
-    }
-  }
-
-  res.json({
-    success: true,
-    matched: matchResult.matched,
-    matchedRule: matchResult.rule || null,
-    targetInstance: matchResult.targetInstance || testInstance,
-    testMessage,
-    testSender,
-    testInstance,
-    preparedReply: matchResult.replyText || null,
-    sentRealMessage: replySent,
-    error: replyError,
-  });
-});
-
-// 5. Webhook Configuration Assistant
-app.post('/api/webhook/configure', async (req, res) => {
-  const { webhookUrl, instanceName } = req.body;
-
-  if (!webhookUrl) {
-    return res.status(400).json({ success: false, error: 'webhookUrl is required.' });
-  }
-
-  const targetInstance = instanceName || INSTANCE_NAME;
-
-  try {
-    const response = await fetch(`${EVOLUTION_API_URL}/webhook/set/${targetInstance}`, {
-      method: 'POST',
-      headers: getApiHeaders(),
-      body: JSON.stringify({
-        webhook: {
-          enabled: true,
-          url: webhookUrl,
-          byEvents: false,
-          base64: false,
-          events: ['MESSAGES_UPSERT', 'MESSAGES_UPDATE', 'SEND_MESSAGE'],
-        },
-      }),
-    });
-
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      return res.status(response.status).json({ success: false, error: data });
-    }
-
-    res.json({
-      success: true,
-      message: `Webhook successfully configured for instance "${targetInstance}"`,
-      data,
-    });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
 });
 
 // Root Route fallback
@@ -970,7 +938,7 @@ app.get('/', (req, res) => {
 // Start Server
 app.listen(PORT, '0.0.0.0', async () => {
   console.log(`\n======================================================`);
-  console.log(`🌸 Zari WhatsApp Automation Server`);
+  console.log(`🌸 WhatsApp Multi-Instance Automation Server`);
   console.log(`======================================================`);
   console.log(`🚀 Server Running on: http://0.0.0.0:${PORT}`);
   console.log(`📡 Evolution API URL: ${EVOLUTION_API_URL}`);
@@ -979,40 +947,12 @@ app.listen(PORT, '0.0.0.0', async () => {
   console.log(`🛍️  Catalogue URL:    ${CATALOGUE_URL}`);
   console.log(`📋 Rules Loaded:     ${loadRules().length} rule(s) configured`);
   console.log(`👀 Auto Mark Read:   ${AUTO_READ_MESSAGES ? 'Enabled ✅' : 'Disabled'}`);
-  console.log(`🔗 Webhook Public:   ${WEBHOOK_PUBLIC_URL || 'Not configured in env (use WEBHOOK_PUBLIC_URL)'}`);
+  console.log(`🔗 Webhook URL:      ${WEBHOOK_PUBLIC_URL}`);
   console.log(`🖥️  Admin Dashboard:  http://0.0.0.0:${PORT}/`);
   console.log(`======================================================\n`);
 
-  if (WEBHOOK_PUBLIC_URL) {
-    let targetWebhookUrl = WEBHOOK_PUBLIC_URL.trim();
-    if (!targetWebhookUrl.endsWith('/webhook') && !targetWebhookUrl.endsWith('/api/webhook')) {
-      targetWebhookUrl = `${targetWebhookUrl.replace(/\/+$/, '')}/webhook`;
-    }
-    console.log(`📡 Auto-configuring Webhook in Evolution API to: ${targetWebhookUrl}...`);
-    try {
-      const setRes = await fetch(`${EVOLUTION_API_URL}/webhook/set/${INSTANCE_NAME}`, {
-        method: 'POST',
-        headers: getApiHeaders(),
-        body: JSON.stringify({
-          webhook: {
-            enabled: true,
-            url: targetWebhookUrl,
-            byEvents: false,
-            base64: false,
-            events: ['MESSAGES_UPSERT', 'MESSAGES_UPDATE', 'SEND_MESSAGE'],
-          },
-        }),
-      });
-      const setData = await setRes.json().catch(() => ({}));
-      if (setRes.ok) {
-        console.log(`✅ Webhook URL successfully registered in Evolution API!`);
-      } else {
-        console.warn(`⚠️ Could not auto-register webhook in Evolution API (HTTP ${setRes.status}):`, setData);
-      }
-    } catch (whErr) {
-      console.warn(`⚠️ Error auto-registering webhook in Evolution API: ${whErr.message}`);
-    }
-  }
+  // Auto-sync webhooks for all configured instances on server boot
+  await syncAllActiveInstancesWebhooks();
 
   try {
     const checkRes = await fetch(`${EVOLUTION_API_URL}/instance/connectionState/${INSTANCE_NAME}`, {
