@@ -36,15 +36,15 @@ function escapeHtml(str) {
 async function fetchStatusAndLogs() {
   try {
     const [statusRes, logsRes] = await Promise.all([
-      fetch('/api/status').then(r => r.json()),
-      fetch('/api/logs').then(r => r.json()),
+      fetch('/api/status').then(r => r.json()).catch(() => ({})),
+      fetch('/api/logs').then(r => r.json()).catch(() => ({}))
     ]);
 
-    if (statusRes.success) {
+    if (statusRes && statusRes.success) {
       updateStatusUI(statusRes);
     }
 
-    if (logsRes.success) {
+    if (logsRes && logsRes.success) {
       updateLogsUI(logsRes.logs, logsRes.stats);
     }
   } catch (error) {
@@ -56,7 +56,7 @@ async function fetchRules() {
   try {
     const res = await fetch('/api/rules');
     const data = await res.json();
-    if (data.success && Array.isArray(data.rules)) {
+    if (data && data.success && Array.isArray(data.rules)) {
       currentRules = data.rules;
       if (data.defaultCatalogueUrl) defaultCatalogueUrl = data.defaultCatalogueUrl;
       if (data.defaultTemplate) defaultTemplateText = data.defaultTemplate;
@@ -90,7 +90,6 @@ function renderRulesTable() {
 
   tbody.innerHTML = currentRules.map((rule) => {
     const isEnabled = rule.enabled !== false;
-    const instance = rule.instance && rule.instance !== '*' ? rule.instance : 'All Instances (*)';
 
     // Instance Badge
     const instanceBadge = rule.instance && rule.instance !== '*'
@@ -142,62 +141,87 @@ function renderRulesTable() {
 // 3. Add / Edit Rule Modal Handling
 // ==========================================
 function openAddRuleModal() {
-  document.getElementById('modal-title').innerText = 'Configure Instance Auto-Reply';
-  document.getElementById('rule-id').value = '';
-  document.getElementById('rule-instance').value = 'zari';
-  document.getElementById('rule-keywords').value = '';
-  document.getElementById('rule-reply-message').value = defaultTemplateText;
-  document.getElementById('rule-enabled').checked = true;
+  const modal = document.getElementById('rule-modal');
+  const title = document.getElementById('modal-title');
+  const idEl = document.getElementById('rule-id');
+  const instEl = document.getElementById('rule-instance');
+  const kwEl = document.getElementById('rule-keywords');
+  const msgEl = document.getElementById('rule-reply-message');
+  const enabledEl = document.getElementById('rule-enabled');
 
-  document.getElementById('rule-modal').classList.remove('hidden');
+  if (title) title.innerText = 'Configure Instance Auto-Reply';
+  if (idEl) idEl.value = '';
+  if (instEl) instEl.value = 'zari';
+  if (kwEl) kwEl.value = '';
+  if (msgEl) msgEl.value = defaultTemplateText;
+  if (enabledEl) enabledEl.checked = true;
+
+  if (modal) modal.classList.remove('hidden');
 }
 
 function openEditRuleModal(ruleId) {
   const rule = currentRules.find(r => r.id === ruleId);
   if (!rule) return;
 
-  document.getElementById('modal-title').innerText = `Edit Instance Rule (${rule.instance || '*'})`;
-  document.getElementById('rule-id').value = rule.id;
-  document.getElementById('rule-instance').value = rule.instance || '*';
+  const modal = document.getElementById('rule-modal');
+  const title = document.getElementById('modal-title');
+  const idEl = document.getElementById('rule-id');
+  const instEl = document.getElementById('rule-instance');
+  const kwEl = document.getElementById('rule-keywords');
+  const msgEl = document.getElementById('rule-reply-message');
+  const enabledEl = document.getElementById('rule-enabled');
+
+  if (title) title.innerText = `Edit Instance Rule (${rule.instance || '*'})`;
+  if (idEl) idEl.value = rule.id;
+  if (instEl) instEl.value = rule.instance || 'zari';
   
   const kws = Array.isArray(rule.keywords) ? rule.keywords.join(', ') : (rule.keywords || '');
-  document.getElementById('rule-keywords').value = kws;
+  if (kwEl) kwEl.value = kws;
   
-  document.getElementById('rule-reply-message').value = rule.replyMessage || '';
-  document.getElementById('rule-enabled').checked = rule.enabled !== false;
+  if (msgEl) msgEl.value = rule.replyMessage || '';
+  if (enabledEl) enabledEl.checked = rule.enabled !== false;
 
-  document.getElementById('rule-modal').classList.remove('hidden');
+  if (modal) modal.classList.remove('hidden');
 }
 
 function closeRuleModal() {
-  document.getElementById('rule-modal').classList.add('hidden');
+  const modal = document.getElementById('rule-modal');
+  if (modal) modal.classList.add('hidden');
 }
 
 function handleModalBackdropClick(event) {
-  if (event.target.id === 'rule-modal') {
+  if (event && event.target && event.target.id === 'rule-modal') {
     closeRuleModal();
   }
 }
 
 function insertDefaultCatalogueTemplate() {
   const textarea = document.getElementById('rule-reply-message');
-  textarea.value = defaultTemplateText;
+  if (textarea) textarea.value = defaultTemplateText;
 }
 
 // Save Rule Form (Create or Update)
 async function saveRuleForm(e) {
-  e.preventDefault();
+  if (e && e.preventDefault) e.preventDefault();
   const saveBtn = document.getElementById('btn-save-rule');
-  saveBtn.disabled = true;
-  saveBtn.innerText = 'Saving...';
+  if (saveBtn) {
+    saveBtn.disabled = true;
+    saveBtn.innerText = 'Saving...';
+  }
 
-  const ruleId = document.getElementById('rule-id').value.trim();
+  const idEl = document.getElementById('rule-id');
+  const instEl = document.getElementById('rule-instance');
+  const kwEl = document.getElementById('rule-keywords');
+  const msgEl = document.getElementById('rule-reply-message');
+  const enabledEl = document.getElementById('rule-enabled');
+
+  const ruleId = idEl ? idEl.value.trim() : '';
   const payload = {
     id: ruleId || undefined,
-    instance: document.getElementById('rule-instance').value.trim() || 'zari',
-    keywords: document.getElementById('rule-keywords').value.trim(),
-    replyMessage: document.getElementById('rule-reply-message').value.trim(),
-    enabled: document.getElementById('rule-enabled').checked,
+    instance: instEl ? instEl.value.trim() || 'zari' : 'zari',
+    keywords: kwEl ? kwEl.value.trim() : '',
+    replyMessage: msgEl ? msgEl.value.trim() : '',
+    enabled: enabledEl ? enabledEl.checked : true,
   };
 
   try {
@@ -208,18 +232,20 @@ async function saveRuleForm(e) {
     });
 
     const data = await res.json();
-    if (data.success) {
+    if (data && data.success) {
       closeRuleModal();
       await fetchRules();
       await fetchStatusAndLogs();
     } else {
-      alert(`Error saving rule: ${data.error || 'Unknown error'}`);
+      alert(`Error saving rule: ${data?.error || 'Unknown error'}`);
     }
   } catch (err) {
     alert(`Failed to save rule: ${err.message}`);
   } finally {
-    saveBtn.disabled = false;
-    saveBtn.innerText = 'Save Rule';
+    if (saveBtn) {
+      saveBtn.disabled = false;
+      saveBtn.innerText = 'Save Rule';
+    }
   }
 }
 
@@ -232,7 +258,7 @@ async function toggleRuleState(ruleId, newEnabledState) {
       body: JSON.stringify({ enabled: newEnabledState }),
     });
     const data = await res.json();
-    if (data.success) {
+    if (data && data.success) {
       await fetchRules();
     }
   } catch (err) {
@@ -254,11 +280,11 @@ async function deleteRule(ruleId) {
       method: 'DELETE',
     });
     const data = await res.json();
-    if (data.success) {
+    if (data && data.success) {
       await fetchRules();
       await fetchStatusAndLogs();
     } else {
-      alert(`Error deleting rule: ${data.error || 'Unknown error'}`);
+      alert(`Error deleting rule: ${data?.error || 'Unknown error'}`);
     }
   } catch (err) {
     alert(`Failed to delete rule: ${err.message}`);
@@ -274,12 +300,12 @@ async function resetToDefaultRules() {
   try {
     const res = await fetch('/api/rules/reset', { method: 'POST' });
     const data = await res.json();
-    if (data.success) {
+    if (data && data.success) {
       await fetchRules();
       await fetchStatusAndLogs();
       alert('✅ Rules reset to default Catalogue auto-reply!');
     } else {
-      alert(`Error resetting rules: ${data.error}`);
+      alert(`Error resetting rules: ${data?.error}`);
     }
   } catch (err) {
     alert(`Failed to reset rules: ${err.message}`);
@@ -290,6 +316,8 @@ async function resetToDefaultRules() {
 // 4. Status UI & Metric Counters
 // ==========================================
 function updateStatusUI(data) {
+  if (!data) return;
+
   const badge = document.getElementById('connection-status-badge');
   const badgeText = document.getElementById('connection-status-text');
   const instanceNameEl = document.getElementById('header-instance-name');
@@ -298,12 +326,14 @@ function updateStatusUI(data) {
   if (instanceNameEl) instanceNameEl.innerText = instanceName;
 
   const state = data.evolution?.connectionStatus || 'unknown';
-  if (state === 'open' || state === 'connected') {
-    badge.className = 'status-badge connected';
-    badgeText.innerText = `Connected (${instanceName})`;
-  } else {
-    badge.className = 'status-badge disconnected';
-    badgeText.innerText = `Instance: ${state}`;
+  if (badge && badgeText) {
+    if (state === 'open' || state === 'connected') {
+      badge.className = 'status-badge connected';
+      badgeText.innerText = `Connected (${instanceName})`;
+    } else {
+      badge.className = 'status-badge disconnected';
+      badgeText.innerText = `Instance: ${state}`;
+    }
   }
 
   if (data.server?.rulesCount !== undefined) {
@@ -317,9 +347,13 @@ function updateStatusUI(data) {
 // ==========================================
 function updateLogsUI(logs, stats) {
   if (stats) {
-    document.getElementById('stat-received').innerText = stats.totalMessagesReceived || 0;
-    document.getElementById('stat-triggers').innerText = stats.catalogueTriggers || 0;
-    document.getElementById('stat-sent').innerText = stats.repliesSent || 0;
+    const recEl = document.getElementById('stat-received');
+    const trigEl = document.getElementById('stat-triggers');
+    const sentEl = document.getElementById('stat-sent');
+
+    if (recEl) recEl.innerText = stats.totalMessagesReceived || 0;
+    if (trigEl) trigEl.innerText = stats.catalogueTriggers || 0;
+    if (sentEl) sentEl.innerText = stats.repliesSent || 0;
   }
 
   const tbody = document.getElementById('logs-table-body');
@@ -332,7 +366,6 @@ function updateLogsUI(logs, stats) {
 
   tbody.innerHTML = logs.map(log => {
     const initials = (log.senderName || log.sender || 'U').substring(0, 2).toUpperCase();
-    const isAutoReply = log.type === 'AUTO_REPLY' || log.type === 'CATALOGUE_AUTO_REPLY';
 
     let statusBadge = '';
     if (log.status === 'SUCCESS') {
@@ -368,6 +401,18 @@ function updateLogsUI(logs, stats) {
     `;
   }).join('');
 }
+
+// Global function bindings for browser execution
+window.openAddRuleModal = openAddRuleModal;
+window.openEditRuleModal = openEditRuleModal;
+window.closeRuleModal = closeRuleModal;
+window.handleModalBackdropClick = handleModalBackdropClick;
+window.insertDefaultCatalogueTemplate = insertDefaultCatalogueTemplate;
+window.saveRuleForm = saveRuleForm;
+window.toggleRuleState = toggleRuleState;
+window.deleteRule = deleteRule;
+window.resetToDefaultRules = resetToDefaultRules;
+window.fetchStatusAndLogs = fetchStatusAndLogs;
 
 // ==========================================
 // 6. Initialize on page load
